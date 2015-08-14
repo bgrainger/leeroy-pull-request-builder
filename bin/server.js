@@ -31,10 +31,11 @@ app.post('/event_handler', function (req, res) {
     res.status(204).send();
   } else if (gitHubEvent === 'pull_request') {
     if (req.body.action === 'opened' || req.body.action === 'reopened' || req.body.action === 'synchronize') {
-      processPullRequest(req.body.pull_request)
+      var pr = req.body.pull_request;
+      processPullRequest(pr)
         .then(null, function (e) {
           log.error(e);
-          setErrorStatus(req.body.pull_request);
+          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'error', 'Error creating CI build');
         });
       res.status(204).send();
     }    
@@ -165,10 +166,6 @@ function setStatus(user, repo, sha, state, description, targetUrl) {
     target_url: targetUrl,
     context: 'leeroy-pull-request-builder'
   });
-}
-
-function setErrorStatus(pr) {
-  return setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'error', 'Error creating CI build');
 }
 
 function getLeeroyBranches() {

@@ -4,7 +4,7 @@
 var bodyParser = require('body-parser');
 var bunyan = require('bunyan');
 var express = require('express');
-var superagent = require('superagent');
+var superagent = require('superagent-promise')(require('superagent'), Promise);
 
 // ignore errors for git's SSL certificate 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
@@ -26,7 +26,13 @@ app.post('/event_handler', function (req, res) {
   if (gitHubEvent === 'ping') {
     res.status(204).send();
   } else if (gitHubEvent === 'pull_request') {
-    process_pull_request(req, res);
+    process_pull_request(req.body.pull_request)
+      .then(function() {
+        res.status(204).send();
+      }, function (e) {
+        log.error(e);
+        res.status(500).send();
+      })
   } else {
     res.status(400).send();
   }
@@ -34,9 +40,8 @@ app.post('/event_handler', function (req, res) {
 
 app.listen(3000);
 
-function process_pull_request(req, res) {
-  var pr = req.body.pull_request;
-  superagent
+function process_pull_request(pr) {
+  return superagent
     .post('https://git/api/v3/repos/' + pr.base.repo.full_name + '/statuses/' + pr.head.sha)
     .set('Authorization', authHeader)
     .send({
@@ -44,8 +49,7 @@ function process_pull_request(req, res) {
       description: 'Waiting for build to start',
       context: 'leeroy-pull-request-builder'
     })
-    .end(function (err, ghres) {
-      log.info('ghres.status = ' + ghres.status);
-      res.status(204).send();
+    .then(function (res) {
+      log.info('res.status = ' + res.status);
     });
 }

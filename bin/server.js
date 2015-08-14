@@ -45,6 +45,20 @@ app.post('/event_handler', function (req, res) {
 
 app.post('/jenkins', function (req, res) {
   if (req.body && req.body.build) {
+    var pr = activeBuilds[req.body.build.parameters.sha1];
+    if (pr) {
+      switch (req.body.build.phase) {
+        case 'STARTED':
+          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'pending', 'Building with Jenkins', req.body.build.full_url);
+          break;
+        case 'COMPLETED':
+          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha,
+            req.body.build.status == 'SUCCESS' ? 'success' : 'failure',
+            'Jenkins build status: ' + req.body.build.status,
+            req.body.build.full_url);
+          break;
+      }
+    }
     res.status(204).send();    
   } else {
     res.status(400).send();
@@ -62,7 +76,6 @@ function processPullRequest(pr) {
     var key = baseUser + '/' + baseRepo + '/' + baseBranch;
     log.info('Received pull_request event for ' + key + ': SHA = ' + prSha);
     if (lb[key]) {
-      activeBuilds[prSha] = {};
       return setStatus(baseUser, baseRepo, prSha, 'pending', 'Preparing build')
         .then(function () {
           return Promise.all(lb[key].map(function (config) {
@@ -130,6 +143,7 @@ function processPullRequest(pr) {
                     });                  
                 })
                 .then(function() {
+                  activeBuilds[newCommit.sha] = pr;
                   return Promise.all(config.pullRequestBuildUrls.map(function (prBuildUrl) {
                     log.info('Starting a build at ' + prBuildUrl);
                     return superagent
@@ -146,10 +160,11 @@ function processPullRequest(pr) {
   });
 }
 
-function setStatus(user, repo, sha, state, description) {
+function setStatus(user, repo, sha, state, description, targetUrl) {
   return github.repos(user, repo).statuses(sha).create({
     state: state,
     description: description,
+    target_url: targetUrl,
     context: 'leeroy-pull-request-builder'
   });
 }

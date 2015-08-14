@@ -154,8 +154,6 @@ function processPullRequest(pr) {
               });
           }));
         });
-      // create a new one with an updated submodule
-      // 
     }
   });
 }

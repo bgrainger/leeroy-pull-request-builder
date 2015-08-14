@@ -50,10 +50,10 @@ app.post('/jenkins', function (req, res) {
     if (pr) {
       switch (req.body.build.phase) {
         case 'STARTED':
-          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'pending', 'Building with Jenkins', req.body.build.full_url);
+          setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'pending', 'Building with Jenkins', req.body.build.full_url);
           break;
         case 'COMPLETED':
-          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha,
+          setStatus(pr.baseUser, pr.baseRepo, pr.sha,
             req.body.build.status == 'SUCCESS' ? 'success' : 'failure',
             'Jenkins build status: ' + req.body.build.status,
             req.body.build.full_url);
@@ -68,90 +68,46 @@ app.post('/jenkins', function (req, res) {
 
 app.listen(3000);
 
-function processPullRequest(pr) {
-  var baseUser = pr.base.repo.owner.login;
-  var baseRepo = pr.base.repo.name;
-  var baseBranch = pr.base.ref;
-  var prSha = pr.head.sha;
+/**
+ * When a pull_request event is received, creates a new commit in the Build repo that references the
+ * PR's commit (in a submodule) and starts a build.
+ */
+function processPullRequest(pullRequest) {
+  var pr = {
+    baseUser: pullRequest.base.repo.owner.login,
+    baseRepo: pullRequest.base.repo.name,
+    baseBranch: pullRequest.base.ref,
+    headUser: pullRequest.head.repo.owner.login,
+    headRepo: pullRequest.head.repo.name,
+    sha: pullRequest.head.sha,
+  };
   return leeroyBranches.then(function (lb) {
-    var key = baseUser + '/' + baseRepo + '/' + baseBranch;
-    log.info('Received pull_request event for ' + key + ': SHA = ' + prSha);
+    var key = pr.baseUser + '/' + pr.baseRepo + '/' + pr.baseBranch;
+    log.info('Received pull_request event for ' + key + ': SHA = ' + pr.sha);
     if (lb[key]) {
-      return setStatus(baseUser, baseRepo, prSha, 'pending', 'Preparing build')
+      return setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'pending', 'Preparing build')
         .then(function () {
-          return Promise.all(lb[key].map(function (config) {
-            var buildUserRepo = config.repoUrl.match(buildRepoUrl);
-            var buildRepo = github.repos(buildUserRepo[1], buildUserRepo[2]);
-            return buildRepo.git.refs('heads', config.branch).fetch()
-              .then(function (ref) {
-                log.info('Repo ' + config.repoUrl + ' is at commit ' + ref.object.sha);
-                return buildRepo.git.commits(ref.object.sha).fetch();
-              })
+          return Promise.all(lb[key].map(function (leeroyConfig) {
+            var buildUserRepo = leeroyConfig.repoUrl.match(buildRepoUrl);
+            var build = {
+              config: leeroyConfig,
+              repo: github.repos(buildUserRepo[1], buildUserRepo[2])
+            };
+            return getHeadCommit(pr, build)
               .then(function (commit) {
-                return buildRepo.git.trees(commit.tree.sha).fetch()
-                  .then(function (tree) {
-                    log.info('Commit ' + commit.sha + ' has tree ' + tree.sha);
-                    var newItems = tree.tree.filter(function (treeItem) {
-                      if (treeItem.mode === '160000' && treeItem.path == baseRepo) {
-                        treeItem.sha = prSha;
-                        return true;
-                      }
-                      return false;
-                    });
-                    var gitmodulesItem = tree.tree.filter(function (treeItem) {
-                      return treeItem.path === '.gitmodules';
-                    })[0];
-                    return buildRepo.git.blobs(gitmodulesItem.sha).fetch()
-                      .then(function (blob) {
-                        var gitmodules = new Buffer(blob.content, 'base64').toString('utf-8')
-                          .replace('git@git:' + baseUser + '/' + baseRepo + '.git', 'git@git:' + pr.head.repo.owner.login + '/' + pr.head.repo.name + '.git');
-                        return buildRepo.git.blobs.create({
-                          content: gitmodules
-                        })
-                          .then(function (newBlob) {
-                            log.info('newBlob.sha = ' + newBlob.sha);
-                            gitmodulesItem.sha = newBlob.sha;
-                            newItems.push(gitmodulesItem);
-                            return buildRepo.git.trees.create({
-                              base_tree: tree.sha,
-                              tree: newItems
-                            });
-                          })
-                      });
-                })
-                .then(function (newTree) {
-                  log.info('newTree = ' + newTree.sha);
-                  return buildRepo.git.commits.create({
-                    message: 'PR test commit',
-                    tree: newTree.sha,
-                    parents: [ commit.sha ]
-                  });
-                });
+                return createNewCommit(pr, build, commit);
               })
               .then(function (newCommit) {
-                log.info('New commit is ' + newCommit.sha + '; updating ref.');
-                var refName = 'heads/lprb';
-                return buildRepo.git.refs(refName).fetch()
-                  .then(function () {
-                    return buildRepo.git.refs(refName).update({
-                      sha: newCommit.sha,
-                      force: true
-                    });
-                  }, function() {
-                    return buildRepo.git.refs.create({
-                      ref: 'refs/' + refName,
-                      sha: newCommit.sha
-                    });                  
-                })
-                .then(function() {
-                  activeBuilds[newCommit.sha] = pr;
-                  return Promise.all(config.pullRequestBuildUrls.map(function (prBuildUrl) {
-                    log.info('Starting a build at ' + prBuildUrl);
-                    return superagent
-                      .get(prBuildUrl)
-                      .query({ sha1: newCommit.sha });
-                  }));
-                });
+                return createRef(pr, build, newCommit)
+                  .then(function() {
+                    activeBuilds[newCommit.sha] = pr;
+                    return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
+                      log.info('Starting a build at ' + prBuildUrl);
+                      return superagent
+                        .get(prBuildUrl)
+                        .query({ sha1: newCommit.sha });
+                    }));
+                  });                    
               });
           }));
         });
@@ -159,6 +115,10 @@ function processPullRequest(pr) {
   });
 }
 
+/**
+ * Calls the GitHub Status API to set the state for 'sha'.
+ * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
+ */
 function setStatus(user, repo, sha, state, description, targetUrl) {
   return github.repos(user, repo).statuses(sha).create({
     state: state,
@@ -168,6 +128,100 @@ function setStatus(user, repo, sha, state, description, targetUrl) {
   });
 }
 
+/**
+ * Returns a promise for the SHA of the head of the build repo branch specified by
+ * the Leeroy config in 'build.config'.
+ */
+function getHeadCommit(pr, build) {
+  return build.repo.git.refs('heads', build.config.branch).fetch()
+    .then(function (ref) {
+      log.info('Repo ' + build.config.repoUrl + ' is at commit ' + ref.object.sha);
+      return build.repo.git.commits(ref.object.sha).fetch();
+    });
+}
+
+/**
+ * Returns a promise for a new build repo commit that updates the specified 'commit'
+ * with updated submodules for 'pr'.
+ */
+function createNewCommit(pr, build, commit) {
+  return build.repo.git.trees(commit.tree.sha).fetch()
+    .then(function(tree) {
+      return createNewTree(pr, build, tree);
+    })
+    .then(function (newTree) {
+      log.info('newTree = ' + newTree.sha);
+      return build.repo.git.commits.create({
+        message: 'PR test commit',
+        tree: newTree.sha,
+        parents: [ commit.sha ]
+      });
+    });
+}
+
+/**
+ * Returns a promise for a new tree that updates .gitmodules and the submodules
+ * in 'tree' with the updated submodules for 'pr'.
+ */
+function createNewTree(pr, build, tree) {
+  // find the submodule that needs to be changed and update its SHA
+  var newItems = tree.tree.filter(function (treeItem) {
+    if (treeItem.mode === '160000' && treeItem.path == pr.baseRepo) {
+      treeItem.sha = pr.sha;
+      return true;
+    }
+    return false;
+  });
+
+  // find the .gitmodules file
+  var gitmodulesItem = tree.tree.filter(function (treeItem) {
+    return treeItem.path === '.gitmodules';
+  })[0];
+
+  // get the contents of .gitmodules
+  return build.repo.git.blobs(gitmodulesItem.sha).fetch()
+    .then(function (blob) {
+      // update .gitmodules with the repo URL the PR is coming from (because it has the commit we need)
+      var gitmodules = new Buffer(blob.content, 'base64').toString('utf-8')
+        .replace('git@git:' + pr.baseUser + '/' + pr.baseRepo + '.git', 'git@git:' + pr.headUser + '/' + pr.headRepo + '.git');
+      return build.repo.git.blobs.create({
+        content: gitmodules
+      });
+    })
+    .then(function (newBlob) {
+      // create a new tree with updated submodules and .gitmodules
+      gitmodulesItem.sha = newBlob.sha;
+      newItems.push(gitmodulesItem);
+      return build.repo.git.trees.create({
+        base_tree: tree.sha,
+        tree: newItems
+      });
+    })
+}
+
+/**
+ * Updates the 'lprb' (Leeroy Pull Request Builder) branch in 'build' to point at the specified commit SHA.
+ */
+function createRef(pr, build, newCommit) {
+  log.info('New commit is ' + newCommit.sha + '; updating ref.');
+  var refName = 'heads/lprb';
+  return build.repo.git.refs(refName).fetch()
+    .then(function () {
+      return build.repo.git.refs(refName).update({
+        sha: newCommit.sha,
+        force: true
+      });
+    }, function() {
+      return build.repo.git.refs.create({
+        ref: 'refs/' + refName,
+        sha: newCommit.sha
+      });                  
+  });
+}
+
+/**
+ * Gets all the repos+branches that have pullRequestBuildUrls set in their Leeroy configs.
+ */
 function getLeeroyBranches() {
   return github.repos('Build', 'Configuration').contents.fetch()
     .then(function (contents) {

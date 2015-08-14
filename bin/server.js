@@ -4,15 +4,18 @@
 var bodyParser = require('body-parser');
 var bunyan = require('bunyan');
 var express = require('express');
-var superagent = require('superagent-promise')(require('superagent'), Promise);
+var octokat = require('octokat');
 
 // ignore errors for git's SSL certificate 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
-var authHeader = process.env.AUTH_HEADER;
 var log = bunyan.createLogger({ name: 'app' });
 var app = express();
 app.use(bodyParser.json());
+var github = new octokat({
+  token: process.env.GITHUB_TOKEN,
+  rootURL: 'https://git/api/v3'
+})
 
 log.info('Starting');
 
@@ -41,15 +44,53 @@ app.post('/event_handler', function (req, res) {
 app.listen(3000);
 
 function process_pull_request(pr) {
-  return superagent
-    .post('https://git/api/v3/repos/' + pr.base.repo.full_name + '/statuses/' + pr.head.sha)
-    .set('Authorization', authHeader)
-    .send({
-      state: 'pending',
-      description: 'Waiting for build to start',
-      context: 'leeroy-pull-request-builder'
+  return github.repos(pr.base.repo.owner.login, pr.base.repo.name).statuses(pr.head.sha).create({
+    state: 'pending',
+    description: 'Waiting for build to start',
+    context: 'leeroy-pull-request-builder'
+  })
+  .then(function (x) {
+    log.info(x);
+  });
+}
+
+function getLeeroyBranches() {
+  return github.repos('Build', 'Configuration').contents.fetch()
+    .then(function (contents) {
+      log.info('Contents has ' + contents.length + ' files');
+      var jsonFiles = contents.filter(function (elem) {
+        return elem.path.indexOf('.json') === elem.path.length - 5;
+      });
+      return Promise.all(jsonFiles.map(function (elem) {
+        return github.repos('Build', 'Configuration').contents(elem.path).read()
+          .then(function (contents) {
+            try {
+              return JSON.parse(contents);
+            }
+            catch (e) {
+              return null;
+            }
+          });
+      }));
     })
-    .then(function (res) {
-      log.info('res.status = ' + res.status);
+    .then(function (files) {
+      var enabledFiles = files.filter(function (f) {
+        return f && !f.disabled && f.submodules;
+      });
+      log.info('there are ' + enabledFiles.length + ' enabled files with submodules.');
+      var repos = { };
+      enabledFiles.forEach(function (file) {
+        for (var submodule in file.submodules) {
+          var key = submodule + '/' + file.submodules[submodule];
+          repos[key] = repos[key] || [];
+          repos[key].push(file);
+        }
+      });
+      return repos;
+    })
+    .then(null, function(err) {
+      log.error(err);
     });
 }
+
+// getLeeroyBranches();

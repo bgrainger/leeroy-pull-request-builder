@@ -37,6 +37,8 @@ app.post('/event_handler', function (req, res) {
           log.error(e);
           setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'error', 'Error creating CI build');
         });
+    } else {
+      log.info('Action "' + req.body.action + '" not handled.');
     }
     res.status(204).send();
   } else {

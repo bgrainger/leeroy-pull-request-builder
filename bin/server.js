@@ -69,11 +69,12 @@ app.post('/jenkins', function (req, res) {
             req.body.build.full_url);
           break;
       }
+      res.status(204).send();
+      return;
     }
-    res.status(204).send();    
-  } else {
-    res.status(400).send();
   }
+
+  res.status(400).send();
 });
 
 app.listen(3000);

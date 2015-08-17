@@ -26,7 +26,7 @@ app.get('/',  function (req, res) {
 
 app.post('/event_handler', function (req, res) {
   var gitHubEvent = req.headers['x-github-event'];
-  log.info('Received event: ' + gitHubEvent);
+  log.info('Received GitHub event: ' + gitHubEvent);
   if (gitHubEvent === 'ping') {
     res.status(204).send();
   } else if (gitHubEvent === 'pull_request') {
@@ -45,6 +45,7 @@ app.post('/event_handler', function (req, res) {
 });
 
 app.post('/jenkins', function (req, res) {
+  log.info('Received Jenkins notification.');
   if (req.body && req.body.build) {
     var pr = activeBuilds[req.body.build.parameters.sha1];
     if (pr) {

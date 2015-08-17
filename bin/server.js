@@ -81,6 +81,7 @@ function processPullRequest(pullRequest) {
     headUser: pullRequest.head.repo.owner.login,
     headRepo: pullRequest.head.repo.name,
     sha: pullRequest.head.sha,
+    title: 'PR #' + pullRequest.number + ': ' + pullRequest.title
   };
   return leeroyBranches.then(function (lb) {
     var key = pr.baseUser + '/' + pr.baseRepo + '/' + pr.baseBranch;
@@ -153,7 +154,7 @@ function createNewCommit(pr, build, commit) {
     .then(function (newTree) {
       log.info('newTree = ' + newTree.sha);
       return build.repo.git.commits.create({
-        message: 'PR test commit',
+        message: pr.title,
         tree: newTree.sha,
         parents: [ commit.sha ]
       });

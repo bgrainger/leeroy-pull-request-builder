@@ -102,6 +102,7 @@ function processPullRequest(pullRequest) {
           return Promise.all(lb[key].map(function (leeroyConfig) {
             var buildUserRepo = leeroyConfig.repoUrl.match(buildRepoUrl);
             var build = {
+              branch: leeroyConfig.branch || 'master',
               config: leeroyConfig,
               repo: github.repos(buildUserRepo[1], buildUserRepo[2])
             };
@@ -218,7 +219,7 @@ function createNewTree(pr, build, tree) {
  */
 function createRef(pr, build, newCommit) {
   log.info('New commit is ' + newCommit.sha + '; updating ref.');
-  var refName = 'heads/lprb';
+  var refName = 'heads/lprb-' + build.branch;
   return build.repo.git.refs(refName).fetch()
     .then(function () {
       return build.repo.git.refs(refName).update({

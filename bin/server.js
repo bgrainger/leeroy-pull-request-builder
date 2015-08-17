@@ -35,7 +35,7 @@ app.post('/event_handler', function (req, res) {
       processPullRequest(pr)
         .then(null, function (e) {
           log.error(e);
-          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'error', 'Error creating CI build');
+          setStatus(pr.base.repo.owner.login, pr.base.repo.name, pr.head.sha, 'leeroy-pull-request-builder', 'error', 'Error creating CI build');
         });
     } else {
       log.info('Action "' + req.body.action + '" not handled.');
@@ -51,9 +51,10 @@ app.post('/jenkins', function (req, res) {
   if (req.body && req.body.build) {
     var pr = activeBuilds[req.body.build.parameters.sha1];
     if (pr) {
+      var context = 'Jenkins: ' + req.body.name;
       switch (req.body.build.phase) {
         case 'STARTED':
-          setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'pending', 'Building with Jenkins', req.body.build.full_url);
+          setStatus(pr.baseUser, pr.baseRepo, pr.sha, context, 'pending', 'Building with Jenkins', req.body.build.full_url);
           superagent.post(req.body.build.full_url + '/submitDescription')
             .type('form')
             .send({
@@ -63,7 +64,7 @@ app.post('/jenkins', function (req, res) {
             .end();
           break;
         case 'COMPLETED':
-          setStatus(pr.baseUser, pr.baseRepo, pr.sha,
+          setStatus(pr.baseUser, pr.baseRepo, pr.sha, context,
             req.body.build.status == 'SUCCESS' ? 'success' : 'failure',
             'Jenkins build status: ' + req.body.build.status,
             req.body.build.full_url);
@@ -97,33 +98,30 @@ function processPullRequest(pullRequest) {
     var key = pr.baseUser + '/' + pr.baseRepo + '/' + pr.baseBranch;
     log.info('Received pull_request event for ' + key + ': SHA = ' + pr.sha);
     if (lb[key]) {
-      return setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'pending', 'Preparing build')
-        .then(function () {
-          return Promise.all(lb[key].map(function (leeroyConfig) {
-            var buildUserRepo = leeroyConfig.repoUrl.match(buildRepoUrl);
-            var build = {
-              branch: leeroyConfig.branch || 'master',
-              config: leeroyConfig,
-              repo: github.repos(buildUserRepo[1], buildUserRepo[2])
-            };
-            return getHeadCommit(pr, build)
-              .then(function (commit) {
-                return createNewCommit(pr, build, commit);
-              })
-              .then(function (newCommit) {
-                return createRef(pr, build, newCommit)
-                  .then(function() {
-                    activeBuilds[newCommit.sha] = pr;
-                    return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
-                      log.info('Starting a build at ' + prBuildUrl);
-                      return superagent
-                        .get(prBuildUrl)
-                        .query({ sha1: newCommit.sha });
-                    }));
-                  });                    
-              });
-          }));
-        });
+      return Promise.all(lb[key].map(function (leeroyConfig) {
+        var buildUserRepo = leeroyConfig.repoUrl.match(buildRepoUrl);
+        var build = {
+          branch: leeroyConfig.branch || 'master',
+          config: leeroyConfig,
+          repo: github.repos(buildUserRepo[1], buildUserRepo[2])
+        };
+        return getHeadCommit(pr, build)
+          .then(function (commit) {
+            return createNewCommit(pr, build, commit);
+          })
+          .then(function (newCommit) {
+            return createRef(pr, build, newCommit)
+              .then(function() {
+                activeBuilds[newCommit.sha] = pr;
+                return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
+                  log.info('Starting a build at ' + prBuildUrl);
+                  return superagent
+                    .get(prBuildUrl)
+                    .query({ sha1: newCommit.sha });
+                }));
+              });                    
+          });
+      }));
     } else {
       log.info('No PR builds set up for ' + key);
     }
@@ -134,12 +132,12 @@ function processPullRequest(pullRequest) {
  * Calls the GitHub Status API to set the state for 'sha'.
  * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
  */
-function setStatus(user, repo, sha, state, description, targetUrl) {
+function setStatus(user, repo, sha, context, state, description, targetUrl) {
   return github.repos(user, repo).statuses(sha).create({
     state: state,
     description: description,
     target_url: targetUrl,
-    context: 'leeroy-pull-request-builder'
+    context: context
   });
 }
 

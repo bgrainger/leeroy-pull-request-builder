@@ -122,6 +122,8 @@ function processPullRequest(pullRequest) {
               });
           }));
         });
+    } else {
+      log.info('No PR builds set up for ' + key);
     }
   });
 }

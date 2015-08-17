@@ -52,6 +52,13 @@ app.post('/jenkins', function (req, res) {
       switch (req.body.build.phase) {
         case 'STARTED':
           setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'pending', 'Building with Jenkins', req.body.build.full_url);
+          superagent.post(req.body.build.full_url + '/submitDescription')
+            .type('form')
+            .send({
+              description: pr.title,
+              Submit: 'Submit' 
+            })
+            .end();
           break;
         case 'COMPLETED':
           setStatus(pr.baseUser, pr.baseRepo, pr.sha,

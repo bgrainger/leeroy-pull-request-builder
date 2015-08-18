@@ -54,6 +54,9 @@ Edit your Leeroy config file and add:
 
 ### GitHub Enterprise
 
+Add a webhook to https://git/Build/Configuration that sends push events to
+http://lprb:3000/event_handler.
+
 In GitHub Enterprise, create an API token for the user who will update the PR status:
 https://git/settings/tokens/new
 * Token description: leeroy-pull-request-builder

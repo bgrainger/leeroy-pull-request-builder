@@ -41,6 +41,11 @@ app.post('/event_handler', function (req, res) {
       log.info('Action "' + req.body.action + '" not handled.');
     }
     res.status(204).send();
+  } else if (gitHubEvent === 'push') {
+    if (req.body.repository.full_name === 'Build/Configuration' && req.body.ref === 'refs/heads/master') {
+      leeroyBranches = getLeeroyBranches();
+    }
+    res.status(204).send();
   } else {
     res.status(400).send();
   }
@@ -258,7 +263,7 @@ function createRef(pr, build, newCommit) {
 function getLeeroyBranches() {
   return github.repos('Build', 'Configuration').contents.fetch()
     .then(function (contents) {
-      log.info('Contents has ' + contents.length + ' files');
+      log.info('Build/Configuration has ' + contents.length + ' files.');
       var jsonFiles = contents.filter(function (elem) {
         return elem.path.indexOf('.json') === elem.path.length - 5;
       });
@@ -278,7 +283,7 @@ function getLeeroyBranches() {
       var enabledFiles = files.filter(function (f) {
         return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
       });
-      log.info('there are ' + enabledFiles.length + ' enabled files with submodules and PR build URLs.');
+      log.info('Found ' + enabledFiles.length + ' enabled files with submodules and PR build URLs.');
       var repos = { };
       enabledFiles.forEach(function (file) {
         for (var submodule in file.submodules) {

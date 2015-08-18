@@ -115,16 +115,19 @@ function processPullRequest(pullRequest) {
           .then(function (newCommit) {
             return createRef(pr, build, newCommit)
               .then(function() {
-                activeBuilds[newCommit.sha] = pr;
-                return setPendingStatus(pr, build, 'Submitted to Jenkins')
-                  .then(function () {
-                    return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
-                      log.info('Starting a build at ' + prBuildUrl);
-                      return superagent
-                        .get(prBuildUrl)
-                        .query({ sha1: newCommit.sha });
-                    }));
-                  });
+                return newCommit.sha;
+              });
+          })
+          .then(function (newSha) {
+            activeBuilds[newSha] = pr;
+            return setPendingStatus(pr, build, 'Submitted to Jenkins')
+              .then(function () {
+                return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
+                  log.info('Starting a build at ' + prBuildUrl);
+                  return superagent
+                    .get(prBuildUrl)
+                    .query({ sha1: newSha });
+                }));
               });
           });
       }));

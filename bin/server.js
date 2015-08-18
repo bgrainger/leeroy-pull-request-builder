@@ -105,7 +105,10 @@ function processPullRequest(pullRequest) {
           config: leeroyConfig,
           repo: github.repos(buildUserRepo[1], buildUserRepo[2])
         };
-        return getHeadCommit(pr, build)
+        return setPendingStatus(pr, build, 'Preparing build')
+          .then(function() { 
+            return getHeadCommit(pr, build);
+          })
           .then(function (commit) {
             return createNewCommit(pr, build, commit);
           })
@@ -113,13 +116,16 @@ function processPullRequest(pullRequest) {
             return createRef(pr, build, newCommit)
               .then(function() {
                 activeBuilds[newCommit.sha] = pr;
-                return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
-                  log.info('Starting a build at ' + prBuildUrl);
-                  return superagent
-                    .get(prBuildUrl)
-                    .query({ sha1: newCommit.sha });
-                }));
-              });                    
+                return setPendingStatus(pr, build, 'Submitted to Jenkins')
+                  .then(function () {
+                    return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
+                      log.info('Starting a build at ' + prBuildUrl);
+                      return superagent
+                        .get(prBuildUrl)
+                        .query({ sha1: newCommit.sha });
+                    }));
+                  });
+              });
           });
       }));
     } else {
@@ -139,6 +145,17 @@ function setStatus(user, repo, sha, context, state, description, targetUrl) {
     target_url: targetUrl,
     context: context
   });
+}
+
+/**
+ * Calls the GitHub Status API to set the state to "pending" using a unique context for each element
+ * of `build.config.pullRequestBuildUrls`.
+ */
+function setPendingStatus(pr, build, description) {
+  return Promise.all(build.config.pullRequestBuildUrls.map(function (prBuildUrl) {
+    var match = /\/job\/([^/]+)\/buildWithParameters/.exec(prBuildUrl);
+    return match && setStatus(pr.baseUser, pr.baseRepo, pr.sha, 'Jenkins: ' + match[1], 'pending', description);
+  }));
 }
 
 /**

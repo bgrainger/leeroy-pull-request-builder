@@ -274,6 +274,7 @@ function getLeeroyBranches() {
               return JSON.parse(contents);
             }
             catch (e) {
+              log.debug('Invalid JSON in ' + elem.path);
               return null;
             }
           });

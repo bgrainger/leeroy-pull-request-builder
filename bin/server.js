@@ -11,6 +11,12 @@ var superagent = require('superagent-promise')(require('superagent'), Promise);
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
 var log = bunyan.createLogger({ name: 'app' });
+
+if (!process.env.GITHUB_TOKEN) {
+  log.error('GITHUB_TOKEN must be set;')
+  process.exit(1);  
+}
+
 var app = express();
 app.use(bodyParser.json());
 var github = new octokat({

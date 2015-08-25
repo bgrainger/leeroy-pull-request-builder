@@ -4,7 +4,9 @@
 var bodyParser = require('body-parser');
 var bunyan = require('bunyan');
 var express = require('express');
+var Immutable = require('immutable');
 var octokat = require('octokat');
+var Rx = require('rx');
 var superagent = require('superagent-promise')(require('superagent'), Promise);
 
 // ignore errors for git's SSL certificate 
@@ -23,6 +25,8 @@ var github = new octokat({
   token: process.env.GITHUB_TOKEN,
   rootURL: 'https://git/api/v3'
 })
+
+var gitHubPushes = new Rx.Subject();
 
 log.info('Starting');
 
@@ -48,9 +52,7 @@ app.post('/event_handler', function (req, res) {
     }
     res.status(204).send();
   } else if (gitHubEvent === 'push') {
-    if (req.body.repository.full_name === 'Build/Configuration' && req.body.ref === 'refs/heads/master') {
-      leeroyBranches = getLeeroyBranches();
-    }
+    gitHubPushes.onNext(req.body);
     res.status(204).send();
   } else {
     res.status(400).send();
@@ -263,10 +265,7 @@ function createRef(pr, build, newCommit) {
   });
 }
 
-/**
- * Gets all the repos+branches that have pullRequestBuildUrls set in their Leeroy configs.
- */
-function getLeeroyBranches() {
+function getLeeroyConfigs() {
   return github.repos('Build', 'Configuration').contents.fetch()
     .then(function (contents) {
       log.info('Build/Configuration has ' + contents.length + ' files.');
@@ -287,10 +286,19 @@ function getLeeroyBranches() {
       }));
     })
     .then(function (files) {
-      var enabledFiles = files.filter(function (f) {
+      var configs = files.filter(function (f) {
         return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
       });
-      log.info('Found ' + enabledFiles.length + ' enabled files with submodules and PR build URLs.');
+      log.info('Found ' + configs.length + ' enabled files with submodules and PR build URLs.');
+      return configs;
+    });
+}
+
+/**
+ * Gets all the repos+branches that have pullRequestBuildUrls set in their Leeroy configs.
+ */
+function getLeeroyBranches() {
+  return getLeeroyConfigs().then(function (enabledFiles) {
       var repos = { };
       enabledFiles.forEach(function (file) {
         for (var submodule in file.submodules) {
@@ -309,3 +317,121 @@ function getLeeroyBranches() {
 var leeroyBranches = getLeeroyBranches();
 var activeBuilds = {};
 var buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
+
+/*var latestConfigs = gitHubPushes.filter(function (push) {
+  return push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master';
+})
+  .startWith(null)
+  .flatMap(function() {
+    return Rx.Observable.fromPromise(getLeeroyConfigs());
+  });
+
+latestConfigs.map(loadConfigurationFromLeeroyConfigs)*/
+
+
+function loadConfigurationFromLeeroyConfigs(configs) {
+  var buildRepos = [];
+  var submoduleRepos = { };
+  configs.forEach(function (config) {
+    var userRepo = config.repoUrl.match(buildRepoUrl);
+    var buildRepo = {
+      repo : {
+        user: userRepo[1],
+        repo: userRepo[2],
+        branch: config.branch || 'master'
+      },
+      jobs : config.pullRequestBuildUrls.map(function (buildUrl) {
+        var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
+        return {
+          name: match && match[1],
+          url: buildUrl
+        };
+      })
+        .where(function (job) {
+          return job.name ? true : false;
+        })
+    };
+    
+    buildRepos.push(buildRepo);
+    
+    for (var submodule in config.submodules) {
+      submoduleRepos[submodule] = submoduleRepos[submodule] || { };
+      var branch = config.submodules[submodule];
+      submoduleRepos[submodule][branch] = submoduleRepos[submodule][branch] || [ ];
+      submoduleRepos[submodule][branch].push(buildRepo);
+    }
+  });
+  
+  return {
+    buildRepos: buildRepos,
+    submoduleRepos: submoduleRepos
+  };
+}
+
+function getAllLeeroyConfigs() {
+  return Rx.Observable.fromPromise(getLeeroyConfigs())
+    .flatMap(Rx.Observable.from)
+    .map(function (config) {
+      return {
+        addLeeroyConfig: config
+      };
+    });
+}
+
+var updateConfigs = gitHubPushes.filter(function (push) {
+  return push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master';
+})
+  .flatMap(getAllLeeroyConfigs);
+
+var updateStateActions = {
+  addLeeroyConfig: updateStateAddLeeroyConfig
+};
+
+function updateState(state, event) {
+  for (var eventName in updateStateActions) {
+    if (event[eventName])
+      state = updateStateActions[eventName](state, event[eventName]);
+  }
+  return state;
+}
+
+function updateStateAddLeeroyConfig(state, config) {
+  var userRepo = config.repoUrl.match(buildRepoUrl);
+  var build = {
+    repo : {
+      user: userRepo[1],
+      repo: userRepo[2],
+      branch: config.branch || 'master'
+    },
+    jobs : config.pullRequestBuildUrls.map(function (buildUrl) {
+      var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
+      return {
+        name: match && match[1],
+        url: buildUrl
+      };
+    })
+      .filter(function (job) {
+        return job.name ? true : false;
+      })
+  };
+  var buildKey = build.repo.user + '/' + build.repo.repo + '/' + build.repo.branch;
+  return state.setIn(['builds', buildKey], build);
+}
+
+var allEvents = getAllLeeroyConfigs()
+  .concat(updateConfigs);
+
+var state = allEvents.scan(updateState, Immutable.Map({ builds: Immutable.Map(), pullRequests: Immutable.List() }));
+
+state.subscribe(function (s) { 
+  //log.info(s); 
+  }, function (err) { 
+  log.error(err);
+  log.error(err.stack());
+  });
+state.do(function (s) {
+  log.info(s);
+}, function (err) {
+  log.error(err);
+  log.error(err.stack());
+});

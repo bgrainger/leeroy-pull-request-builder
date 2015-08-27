@@ -12,7 +12,7 @@ Add a Notification Endpoint:
 * Format: JSON
 * Protocol: HTTP
 * Event: All Events
-* URL: http://lprb:3000/jenkins
+* URL: http://leeroy-webhook.lrscorp.net:4001/jenkins
 
 Set "This build is parameterized". Add a string parameter named `sha1` (no default value).
 
@@ -26,7 +26,7 @@ the unnecessary ones (which may be all of them).
 At https://git/Logos/YourRepoName/settings, choose "Webhooks and Services".
 
 Click "Add Webhook":
-* Payload URL: http://lprb:3000/event_handler
+* Payload URL: http://leeroy-webhook.lrscorp.net:4001/event_handler
 * Content type: application/json
 * Secret: (blank)
 * Let me select individual events: Pull Request
@@ -55,7 +55,7 @@ Edit your Leeroy config file and add:
 ### GitHub Enterprise
 
 Add a webhook to https://git/Build/Configuration that sends push events to
-http://lprb:3000/event_handler.
+http://leeroy-webhook.lrscorp.net:4001/event_handler.
 
 In GitHub Enterprise, create an API token for the user who will update the PR status:
 https://git/settings/tokens/new
@@ -66,8 +66,13 @@ Save the token in a safe place.
 
 ### Server
 
-Run:
+Apply the `leeroy-pull-request-builder_server` puppet class to the node and run
+`puppet apply -t`.
 
-```
-GITHUB_TOKEN=TheApiTokenYouCreatedAbove node index.js
-```
+To restart the service, run `svcadm restart leeroy-pull-request-builder`.
+
+### Deployment
+
+Add a "deploy" git remote: `git remote add deploy ssh://desk-dev-util01.lrscorp.net/usr/local/src/leeroy-pull-request-builder.git`
+
+To deploy the code: `git push deploy master`

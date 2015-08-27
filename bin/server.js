@@ -89,7 +89,7 @@ app.post('/jenkins', function (req, res) {
   res.status(400).send();
 });
 
-app.listen(3000);
+app.listen(process.env.PORT);
 
 /**
  * When a pull_request event is received, creates a new commit in the Build repo that references the

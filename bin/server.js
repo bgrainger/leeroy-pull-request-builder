@@ -177,7 +177,7 @@ function setPendingStatus(pr, build, description) {
  * the Leeroy config in 'build.config'.
  */
 function getHeadCommit(pr, build) {
-  return build.repo.git.refs('heads', build.config.branch).fetch()
+  return build.repo.git.refs('heads', build.branch).fetch()
     .then(function (ref) {
       log.info('Repo ' + build.config.repoUrl + ' is at commit ' + ref.object.sha);
       return build.repo.git.commits(ref.object.sha).fetch();

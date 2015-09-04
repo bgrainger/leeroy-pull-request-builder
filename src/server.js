@@ -15,30 +15,31 @@ var server = {
 	},
 	
 	jenkinsWebHookHandler: function jenkinsWebHookHandler(req, res) {
-		this.jenkins.onNext(req.body);
+		this.builds.onNext(req.body);
 		res.status(204).send();
-	},
-	
-	start: function start(port) {
-		this.app.use(bodyParser.json());
-		this.app.listen(port);
-		
-		this.github = {
-			'issue_comment': new rx.Subject(),
-			'push': new rx.Subject(),
-			'pull_request': new rx.Subject(),
-			'ping': new rx.Subject()
-		};
-		
-		this.jenkins =new rx.Subject(); 
-		
-		this.app.post('/event_handler', this.gitHubWebHookHandler);
-		this.app.post('/jenkins', this.jenkinsWebHookHandler);
 	}
 }
 
-exports.startServer = function startServer(port) {
+function startServer(port) {
 	var that = Object.create(server);
-	that.start(port);	
+
+	that.app = express();
+	that.app.use(bodyParser.json());
+	that.app.listen(port);
+	
+	that.github = {
+		'issue_comment': new rx.Subject(),
+		'push': new rx.Subject(),
+		'pull_request': new rx.Subject(),
+		'ping': new rx.Subject()
+	};
+	
+	that.builds =new rx.Subject(); 
+	
+	that.app.post('/event_handler', that.gitHubWebHookHandler);
+	that.app.post('/jenkins', that.jenkinsWebHookHandler);
+	
 	return that;
 }
+
+exports.start = startServer;

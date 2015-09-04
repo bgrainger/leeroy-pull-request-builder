@@ -5,7 +5,7 @@ const rx = require('rx');
 var server = {
 	gitHubWebHookHandler: function gitHubWebHookHandler(req, res) {
 		const gitHubEvent = req.headers['x-github-event'];
-		const subject = this.public.github[gitHubEvent];
+		const subject = this.github[gitHubEvent];
 		if (subject) {
 			subject.onNext(req.body);
 			res.status(204).send();
@@ -15,33 +15,30 @@ var server = {
 	},
 	
 	jenkinsWebHookHandler: function jenkinsWebHookHandler(req, res) {
-		this.public.jenkins.onNext(req.body);
+		this.jenkins.onNext(req.body);
 		res.status(204).send();
 	},
 	
 	start: function start(port) {
-		this.public = {
-			app: express(),
-			github: {
-				'issue_comment': new rx.Subject(),
-				'push': new rx.Subject(),
-				'pull_request': new rx.Subject(),
-				'ping': new rx.Subject()
-			},
-			jenkins: new rx.Subject()
+		this.app.use(bodyParser.json());
+		this.app.listen(port);
+		
+		this.github = {
+			'issue_comment': new rx.Subject(),
+			'push': new rx.Subject(),
+			'pull_request': new rx.Subject(),
+			'ping': new rx.Subject()
 		};
 		
-		var app = this.public.app;
-		app.use(bodyParser.json());
-		app.listen(port);
+		this.jenkins =new rx.Subject(); 
 		
-		app.post('/event_handler', this.gitHubWebHookHandler);
-		app.post('/jenkins', this.jenkinsWebHookHandler);
+		this.app.post('/event_handler', this.gitHubWebHookHandler);
+		this.app.post('/jenkins', this.jenkinsWebHookHandler);
 	}
 }
 
 exports.startServer = function startServer(port) {
-	var srv = Object.create(server);
-	srv.start(port);
-	return srv.public;
+	var that = Object.create(server);
+	that.start(port);	
+	return that;
 }

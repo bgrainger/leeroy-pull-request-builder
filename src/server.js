@@ -2,44 +2,47 @@ const bodyParser = require('body-parser');
 const express = require('express');
 const rx = require('rx');
 
-var server = {
-	gitHubWebHookHandler: function gitHubWebHookHandler(req, res) {
-		const gitHubEvent = req.headers['x-github-event'];
-		const subject = this.github[gitHubEvent];
-		if (subject) {
-			subject.onNext(req.body);
-			res.status(204).send();
-		} else {
-			res.status(400).send();
-		}
-	},
-	
-	jenkinsWebHookHandler: function jenkinsWebHookHandler(req, res) {
-		this.builds.onNext(req.body);
+let app = express();
+app.use(bodyParser.json());
+
+let gitHubSubjects = {
+	'issue_comment': new rx.Subject(),
+	'push': new rx.Subject(),
+	'pull_request': new rx.Subject(),
+	'ping': new rx.Subject()
+};
+
+let jenkinsSubject =new rx.Subject(); 
+
+function gitHubWebHookHandler(req, res) {
+	const gitHubEvent = req.headers['x-github-event'];
+	const subject = gitHubSubjects[gitHubEvent];
+	if (subject) {
+		subject.onNext(req.body);
 		res.status(204).send();
+	} else {
+		res.status(400).send();
 	}
-}
+};
+
+function jenkinsWebHookHandler(req, res) {
+	this.jenkinsSubject.onNext(req.body);
+	res.status(204).send();
+};
+
+app.get('/', (req, res) => res.send('leeroy-pull-request-builder'));
+app.post('/event_handler', gitHubWebHookHandler);
+app.post('/jenkins', jenkinsWebHookHandler);
+
+let started = false;
 
 function startServer(port) {
-	var that = Object.create(server);
-
-	that.app = express();
-	that.app.use(bodyParser.json());
-	that.app.listen(port);
-	
-	that.github = {
-		'issue_comment': new rx.Subject(),
-		'push': new rx.Subject(),
-		'pull_request': new rx.Subject(),
-		'ping': new rx.Subject()
-	};
-	
-	that.builds =new rx.Subject(); 
-	
-	that.app.post('/event_handler', that.gitHubWebHookHandler);
-	that.app.post('/jenkins', that.jenkinsWebHookHandler);
-	
-	return that;
+	if (started)
+		throw new Error('Server is already started.');
+	started = true;
+	app.listen(port);	
 }
 
+exports.github = gitHubSubjects;
+exports.jenkins = jenkinsSubject;
 exports.start = startServer;

@@ -2,7 +2,7 @@ require('babel/register');
 
 if (!process.env.GITHUB_TOKEN) {
   log.error('GITHUB_TOKEN must be set;')
-  process.exit(1);  
+  process.exit(1);
 }
 
 // ignore errors for git's SSL certificate 

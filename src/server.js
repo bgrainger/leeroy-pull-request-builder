@@ -75,15 +75,15 @@ function getLeeroyConfigs() {
 
 const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 
-function createPullRequest(pr) {
-  return pullRequest.create(repoBranch.create(pr.base.repo.owner.login, pr.base.repo.name, pr.base.ref),
-    repoBranch.create(pr.head.repo.owner.login, pr.head.repo.name, pr.head.ref),
-    pr.number,
-    `PR #${pr.number}: ${pr.title}`);
+function mapGitHubPullRequest(ghpr) {
+  return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
+    repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
+    ghpr.number,
+    `PR #${ghpr.number}: ${ghpr.title}`);
 }
 
 function addPullRequest(gitHubPullRequest) {
-  var pr = createPullRequest(gitHubPullRequest);
+  var pr = mapGitHubPullRequest(gitHubPullRequest);
   state.addPullRequest(pr);
   return Promise.all(github.repos(gitHubPullRequest.base.repo.owner.login, gitHubPullRequest.base.repo.name)
     .issues(gitHubPullRequest.number).comments.fetch()

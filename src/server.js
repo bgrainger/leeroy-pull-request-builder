@@ -61,9 +61,10 @@ function getGitHubPullRequestId(ghpr) {
 	return mapGitHubPullRequest(ghpr).id;
 }
 
-function mapLeeroyConfig(leeroyConfig) {
+function mapLeeroyConfig(name, leeroyConfig) {
 	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
+		name,
 		repoBranch.create(user, repo, leeroyConfig.branch || 'master'),
 		leeroyConfig.pullRequestBuildUrls.map(function (buildUrl) {
 			var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
@@ -84,11 +85,11 @@ gitHubSubjects['push']
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
 	.do(contents => log.debug(`Build/Configuration has ${contents.length} files.`))
 	.flatMap(contents => contents.filter(x => x.path.indexOf('.json') === x.path.length - 5))
-	.flatMap(file => github.repos('Build', 'Configuration').contents(file.path).read())
-	.map(contents => { try { return JSON.parse(contents); } catch(e) { return null; } })
-	.filter(f => f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl))
-	.map(mapLeeroyConfig)
-	.subscribe(state.addBuildConfig);
+	.flatMap(file => github.repos('Build', 'Configuration').contents(file.path).read().then(contents => ({ path: file.path, contents })))
+	.map(x => { try { return { path: x.path, config: JSON.parse(x.contents) }; } catch(e) { return null; } })
+	.filter(x => x && !x.config.disabled && x.config.submodules && x.config.pullRequestBuildUrls && buildRepoUrl.test(x.config.repoUrl))
+	.map(x => mapLeeroyConfig(x.path.substr(0, x.path.length - 5), x.config))
+	.subscribe(state.addBuildConfig, e => log.error(e));
 
 // get all existing open PRs when new repos are watched
 const existingPrs = state.watchedRepos

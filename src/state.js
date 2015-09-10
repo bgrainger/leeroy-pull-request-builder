@@ -12,7 +12,7 @@ const submoduleBuilds = { };
 const watchedRepos = new rx.Subject();
 
 function addBuildConfig(buildConfig) {
-	log.debug(`Adding Leeroy config for ${buildConfig.repo.id}`);
+	log.debug(`Adding Leeroy config ${buildConfig.id} for ${buildConfig.repo.id}`);
 	
 	allBuilds.push(buildConfig);
 	

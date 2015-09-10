@@ -2,8 +2,9 @@ const prototype = {
 	
 };
 
-function create(repo, jobs, submodules) {
+function create(id, repo, jobs, submodules) {
 	return Object.create(prototype, {
+		id: { value: id },
 		repo: { value: repo },
 		jobs: { value: jobs },
 		submodules: { value: submodules }

@@ -78,6 +78,74 @@ function mapLeeroyConfig(name, leeroyConfig) {
 	);
 }
 
+function buildPullRequestPromise(prId) {
+	log.info(`Received build request for ${prId}.`);
+	return Promise.all(Array.from(state.getIncludingPrs()).map(prId => buildPullRequestPromise(prId)))
+		.then(x => [].concat.apply([], x))
+		.then(configs => {
+			log.info(`Previously built configs for ${prId} are: ${configs}`);
+			const previouslyBuilt = new Set(configs);
+
+			const pr = state.getPr(prId);
+			const buildConfigs = state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x));
+			log.info(`Configs to build are: ${buildConfigs.map(x => x.id)}`);
+			return Promise.all(configs.map(config => {
+
+			}));
+		});
+	// build all including PRs, get their build configs
+	// find all affected build configs (minus previously built); for each:
+		// get head commit, tree, .gitmodules blob
+		// get all included PRs; for each:
+			// update tree sha
+			// update .gitmodules path
+		// create .gitmodules blob
+		// create new tree
+		// create new commit
+		// for each job:
+			// set pending status
+			// submit to Jenkins
+}
+
+function buildPullRequest(prId) {
+	log.info(`Received build request for ${prId}.`);
+	const pr = state.getPr(prId);
+	
+	const builtConfigs = rx.Observable.from(state.getIncludingPrs()).flatMap(prId => buildPullRequest(prId)).toSet();
+	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x)));
+	const configGitHub = configsToBuild
+		.do(config => log.debug(`Will build ${config.id}`))
+		.map(config => ({ config: config, github: github.repos(config.repo.user, config.repo.repo) }));
+	const headCommits = configGitHub
+		.flatMap(x => x.github.git.refs('heads', x.config.repo.branch).fetch()
+			.then(ref => x.github.git.commits(ref.object.sha).fetch())
+			.then(commit => x.github.git.trees(commit.tree.sha).fetch()
+				.then(tree => {
+					const gitmodulesItem = tree.tree.filter(x => x.path === '.gitmodules')[0];
+					return x.github.git.blobs(gitmodulesItem.sha).fetch()
+						.then(blob => {
+							const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
+							return Object.assign({ buildHeadCommit: commit, buildHeadTree: tree, gitmodules }, x);						
+						});
+				})));
+
+	headCommits.subscribe(x => log.info(x));
+
+	return new rx.Subject();	
+	// build all including PRs, get their build configs
+	// find all affected build configs (minus previously built); for each:
+		// get head commit, tree, .gitmodules blob
+		// get all included PRs; for each:
+			// update tree sha
+			// update .gitmodules path
+		// create .gitmodules blob
+		// create new tree
+		// create new commit
+		// for each job:
+			// set pending status
+			// submit to Jenkins
+}
+
 // update Leeroy configs every time Build/Configuration is pushed
 gitHubSubjects['push']
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
@@ -115,6 +183,11 @@ allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.filter(x => x.match)
 	.map(x => ({ parent: x.id, child: `${x.match[1]}/${x.match[2]}/${x.match[3]}` }))
 	.subscribe(x => state.addPullRequestDependency(x.parent, x.child), e => log.error(e));
+
+newIssueComments.subscribe(comment => {
+	if (/rebuild this/i.test(comment.body))
+		buildPullRequest(comment.id);
+});
 
 let started = false;
 function startServer(port) {

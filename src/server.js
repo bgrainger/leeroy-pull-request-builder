@@ -1,4 +1,5 @@
 const bodyParser = require('body-parser');
+const buildConfig = require('./build-config.js');
 const express = require('express');
 const log = require('./logger');
 const octokat = require('octokat');
@@ -44,6 +45,9 @@ app.get('/', (req, res) => res.send('leeroy-pull-request-builder'));
 app.post('/event_handler', gitHubWebHookHandler);
 app.post('/jenkins', jenkinsWebHookHandler);
 
+const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
+const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+
 function getLeeroyConfigs() {
   return github.repos('Build', 'Configuration').contents.fetch()
     .then(function (contents) {
@@ -66,14 +70,12 @@ function getLeeroyConfigs() {
     })
     .then(function (files) {
       var configs = files.filter(function (f) {
-        return f && !f.disabled && f.submodules && f.pullRequestBuildUrls;
+        return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
       });
       log.info(`Found ${configs.length} enabled files with submodules and PR build URLs.`);
       return configs;
     });
 }
-
-const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 
 function mapGitHubPullRequest(ghpr) {
   return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
@@ -82,28 +84,58 @@ function mapGitHubPullRequest(ghpr) {
     `PR #${ghpr.number}: ${ghpr.title}`);
 }
 
+function mapLeeroyConfig(leeroyConfig) {
+	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
+	return buildConfig.create(
+	  repoBranch.create(user, repo, leeroyConfig.branch || 'master'),
+		leeroyConfig.pullRequestBuildUrls.map(function (buildUrl) {
+			var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
+			return {
+				name: match && match[1],
+				url: buildUrl
+			};
+		})
+			.filter(job => job.name ? true : false),
+    leeroyConfig.submodules
+  );
+}
+
 function addPullRequest(gitHubPullRequest) {
   var pr = mapGitHubPullRequest(gitHubPullRequest);
-  state.addPullRequest(pr);
+  pr = state.addPullRequest(pr);
   return Promise.all(github.repos(gitHubPullRequest.base.repo.owner.login, gitHubPullRequest.base.repo.name)
     .issues(gitHubPullRequest.number).comments.fetch()
     .then(comments => {
       for (var comment of [ gitHubPullRequest.body ].concat(comments.map(x => x.body))) {
         var match = includePr.exec(comment);
         if (match) {
-          log.info(`${pr.id} includes ${match[1]}/${match[2]}/${match[3]}`);
+          let included = `${match[1]}/${match[2]}/${match[3]}`;
+          pr.addInclude(included);
+          log.info(`${pr.id} includes ${included}`);
         }
       }
     }));
 }
 
-getLeeroyConfigs().then(configs => {
-	for (let config of configs)
-		state.addLeeroyConfig(config);
-})
-  .then(() => state.getReposToWatch().map(repo => github.repos(repo).pulls.fetch()
-    .then(pulls => Promise.all(pulls.map(x => addPullRequest(x))))))
-  .then(null, e => log.error(e));
+// observable of all pushes to Build/Configuration
+const configurationPushes = gitHubSubjects['push']
+  .filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
+  .startWith(null)
+  .flatMap(rx.Observable.fromPromise(getLeeroyConfigs()));
+
+// update Leeroy configs every time Build/Configuration is pushed
+configurationPushes.flatMap(rx.Observable.from).subscribe(x => state.addBuildConfig(mapLeeroyConfig(x)));
+
+// get all existing open PRs when Build/Configuration is pushed
+configurationPushes.subscribe(x => {
+  state.getReposToWatch().map(repo => github.repos(repo).pulls.fetch()
+    .then(pulls => Promise.all(pulls.map(x => addPullRequest(x)))))
+    .then(null, e => log.error(e));
+});
+
+// add all new PRs
+gitHubSubjects['pull_request'].filter(pr => pr.action === 'opened')
+  .subscribe(pr => addPullRequest(pr).then(null, e => log.error(e)));
 
 let started = false;
 function startServer(port) {
@@ -114,6 +146,4 @@ function startServer(port) {
 	app.listen(port);	
 }
 
-exports.github = gitHubSubjects;
-exports.jenkins = jenkinsSubject;
 exports.start = startServer;

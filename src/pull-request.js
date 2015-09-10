@@ -1,5 +1,7 @@
 const prototype = { 
-	
+	addInclude: function(id) {
+		this.includes.push(id);
+	}
 };
 
 function create(base, head, number, title) {

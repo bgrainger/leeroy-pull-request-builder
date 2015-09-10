@@ -5,47 +5,36 @@ const repoBranch = require('./repo-branch');
 var allBuilds = [ ];
 var allPrs = { };
 var submoduleRepos = { };
+var submoduleBuilds = { };
 
-const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
 
-function addLeeroyConfig(leeroyConfig) {
-	log.debug(`Adding Leeroy config for ${leeroyConfig.repoUrl}`);
-	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
-	var build = {
-		repo : {
-			user,
-			repo,
-			branch: leeroyConfig.branch || 'master'
-		},
-		jobs : leeroyConfig.pullRequestBuildUrls.map(function (buildUrl) {
-			var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
-			return {
-				name: match && match[1],
-				url: buildUrl
-			};
-		})
-			.filter(job => job.name ? true : false)
-	};
+function addBuildConfig(buildConfig) {
+	log.debug(`Adding Leeroy config for ${buildConfig.repo.id}`);
 	
-	allBuilds.push(build);
+	allBuilds.push(buildConfig);
 	
-	for (var submodule in leeroyConfig.submodules) {
-		submoduleRepos[submodule] = submoduleRepos[submodule] || { };
-		var branch = leeroyConfig.submodules[submodule];
-		submoduleRepos[submodule][branch] = submoduleRepos[submodule][branch] || [ ];
-		submoduleRepos[submodule][branch].push(build);
+	for (var submodule in buildConfig.submodules) {
+		submoduleRepos[submodule] = true;
+
+		var id = `${submodule}/${buildConfig.submodules[submodule]}`;
+		submoduleBuilds[id] = submoduleBuilds[id] || [];
+		submoduleBuilds[id].push(buildConfig);
     }
 }
 
 function addPullRequest(pr) {
-	allPrs[pr.id] = pr;
+	if (!allPrs[pr.id])
+		allPrs[pr.id] = pr;
+	else
+		pr = allPrs[pr.id];
 	log.debug(`Added ${pr.id}.`);
+	return pr;
 }
 
 function getReposToWatch() {
 	return Object.keys(submoduleRepos);
 }
 
-exports.addLeeroyConfig = addLeeroyConfig;
+exports.addBuildConfig = addBuildConfig;
 exports.addPullRequest = addPullRequest;
 exports.getReposToWatch = getReposToWatch;

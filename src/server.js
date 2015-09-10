@@ -10,22 +10,22 @@ const repoBranch = require('./repo-branch');
 
 rx.config.longStackSupport = true;
 
-let app = express();
+const app = express();
 app.use(bodyParser.json());
 
-let github = new octokat({
+const github = new octokat({
 	token: process.env.GITHUB_TOKEN,
 	rootURL: 'https://git/api/v3'
 })
 
-let gitHubSubjects = {
+const gitHubSubjects = {
 	'issue_comment': new rx.Subject(),
 	'push': new rx.Subject(),
 	'pull_request': new rx.Subject(),
 	'ping': new rx.Subject()
 };
 
-let jenkinsSubject =new rx.Subject(); 
+const jenkinsSubject =new rx.Subject(); 
 
 function gitHubWebHookHandler(req, res) {
 	const gitHubEvent = req.headers['x-github-event'];

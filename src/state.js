@@ -3,21 +3,21 @@ const pullRequest = require('./pull-request');
 const repoBranch = require('./repo-branch');
 const rx = require('rx');
 
-var allBuilds = [ ];
-var allPrs = { };
-var prIncludes = { };
-var prIncluded = { };
-var submoduleRepos = { };
-var submoduleBuilds = { };
-var watchedRepos = new rx.Subject();
+const allBuilds = [ ];
+const allPrs = { };
+const prIncludes = { };
+const prIncluded = { };
+const submoduleRepos = { };
+const submoduleBuilds = { };
+const watchedRepos = new rx.Subject();
 
 function addBuildConfig(buildConfig) {
 	log.debug(`Adding Leeroy config for ${buildConfig.repo.id}`);
 	
 	allBuilds.push(buildConfig);
 	
-	for (var submodule in buildConfig.submodules) {
-		var id = `${submodule}/${buildConfig.submodules[submodule]}`;
+	for (let submodule in buildConfig.submodules) {
+		const id = `${submodule}/${buildConfig.submodules[submodule]}`;
 		submoduleBuilds[id] = submoduleBuilds[id] || [];
 		submoduleBuilds[id].push(buildConfig);
 

@@ -77,14 +77,10 @@ function mapLeeroyConfig(leeroyConfig) {
 	);
 }
 
-// observable of all pushes to Build/Configuration
-const configurationPushes = gitHubSubjects['push']
+// update Leeroy configs every time Build/Configuration is pushed
+gitHubSubjects['push']
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
 	.startWith(null)
-	.share();
-
-// update Leeroy configs every time Build/Configuration is pushed
-configurationPushes
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
 	.do(contents => log.debug(`Build/Configuration has ${contents.length} files.`))
 	.flatMap(contents => contents.filter(x => x.path.indexOf('.json') === x.path.length - 5))

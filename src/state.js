@@ -7,7 +7,7 @@ const allBuilds = [ ];
 const allPrs = { };
 const prIncludes = { };
 const prIncluded = { };
-const submoduleRepos = { };
+const submoduleRepos = new Set();
 const submoduleBuilds = { };
 const watchedRepos = new rx.Subject();
 
@@ -21,8 +21,8 @@ function addBuildConfig(buildConfig) {
 		submoduleBuilds[id] = submoduleBuilds[id] || [];
 		submoduleBuilds[id].push(buildConfig);
 
-		if (!submoduleRepos[submodule]) {
-			submoduleRepos[submodule] = true;
+		if (!submoduleRepos.has(submodule)) {
+			submoduleRepos.add(submodule);
 			watchedRepos.onNext(submodule);
 		}
     }

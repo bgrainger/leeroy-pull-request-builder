@@ -123,7 +123,8 @@ function addPullRequest(gitHubPullRequest) {
 const configurationPushes = gitHubSubjects['push']
   .filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
   .startWith(null)
-  .flatMap(rx.Observable.fromPromise(getLeeroyConfigs()));
+  .flatMap(getLeeroyConfigs)
+  .share();
 
 // update Leeroy configs every time Build/Configuration is pushed
 configurationPushes.flatMap(rx.Observable.from).map(mapLeeroyConfig).subscribe(state.addBuildConfig);

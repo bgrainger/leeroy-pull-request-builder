@@ -52,14 +52,12 @@ const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 
 function getLeeroyConfigs() {
 	return github.repos('Build', 'Configuration').contents.fetch()
-		.then(function (contents) {
+		.then(contents => {
 			log.debug(`Build/Configuration has ${contents.length} files.`);
-			var jsonFiles = contents.filter(function (elem) {
-				return elem.path.indexOf('.json') === elem.path.length - 5;
-			});
-			return Promise.all(jsonFiles.map(function (elem) {
+			var jsonFiles = contents.filter(x => x.path.indexOf('.json') === x.path.length - 5);
+			return Promise.all(jsonFiles.map(elem => {
 				return github.repos('Build', 'Configuration').contents(elem.path).read()
-					.then(function (contents) {
+					.then(contents => {
 						try {
 							return JSON.parse(contents);
 						}
@@ -70,10 +68,8 @@ function getLeeroyConfigs() {
 					});
 			}));
 		})
-		.then(function (files) {
-			var configs = files.filter(function (f) {
-				return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
-			});
+		.then(files => {
+			var configs = files.filter(f => f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl));
 			log.info(`Found ${configs.length} enabled files with submodules and PR build URLs.`);
 			return configs;
 		});
@@ -142,7 +138,7 @@ const existingIssueComments = existingPrs
 const newIssueComments = gitHubSubjects['issue_comment']
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 	
-const allComments = allPrBodies.merge(existingIssueComments).merge(newIssueComments)
+allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
 	.filter(x => x.match)
 	.map(x => ({ parent: x.id, child: `${x.match[1]}/${x.match[2]}/${x.match[3]}` }))
@@ -154,7 +150,7 @@ function startServer(port) {
 		throw new Error('Server is already started.');
 	started = true;
 	log.info(`Starting server on port ${port}`);
-	app.listen(port);	
+	app.listen(port);
 }
 
 exports.start = startServer;

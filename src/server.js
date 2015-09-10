@@ -106,11 +106,7 @@ allPrs
 
 const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
 const existingIssueComments = existingPrs
-	.flatMap(x => {
-		const id = getGitHubPullRequestId(x);
-		return rx.Observable.fromPromise(github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch())
-			.flatMap(x => { id, x.body });
-	});
+	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
 const newIssueComments = gitHubSubjects['issue_comment']
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 	

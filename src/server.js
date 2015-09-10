@@ -14,8 +14,8 @@ let app = express();
 app.use(bodyParser.json());
 
 let github = new octokat({
-  token: process.env.GITHUB_TOKEN,
-  rootURL: 'https://git/api/v3'
+	token: process.env.GITHUB_TOKEN,
+	rootURL: 'https://git/api/v3'
 })
 
 let gitHubSubjects = {
@@ -51,45 +51,45 @@ const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
 const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 
 function getLeeroyConfigs() {
-  return github.repos('Build', 'Configuration').contents.fetch()
-    .then(function (contents) {
-      log.debug(`Build/Configuration has ${contents.length} files.`);
-      var jsonFiles = contents.filter(function (elem) {
-        return elem.path.indexOf('.json') === elem.path.length - 5;
-      });
-      return Promise.all(jsonFiles.map(function (elem) {
-        return github.repos('Build', 'Configuration').contents(elem.path).read()
-          .then(function (contents) {
-            try {
-              return JSON.parse(contents);
-            }
-            catch (e) {
-              // log.debug('Invalid JSON in ' + elem.path);
-              return null;
-            }
-          });
-      }));
-    })
-    .then(function (files) {
-      var configs = files.filter(function (f) {
-        return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
-      });
-      log.info(`Found ${configs.length} enabled files with submodules and PR build URLs.`);
-      return configs;
-    });
+	return github.repos('Build', 'Configuration').contents.fetch()
+		.then(function (contents) {
+			log.debug(`Build/Configuration has ${contents.length} files.`);
+			var jsonFiles = contents.filter(function (elem) {
+				return elem.path.indexOf('.json') === elem.path.length - 5;
+			});
+			return Promise.all(jsonFiles.map(function (elem) {
+				return github.repos('Build', 'Configuration').contents(elem.path).read()
+					.then(function (contents) {
+						try {
+							return JSON.parse(contents);
+						}
+						catch (e) {
+							// log.debug('Invalid JSON in ' + elem.path);
+							return null;
+						}
+					});
+			}));
+		})
+		.then(function (files) {
+			var configs = files.filter(function (f) {
+				return f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl);
+			});
+			log.info(`Found ${configs.length} enabled files with submodules and PR build URLs.`);
+			return configs;
+		});
 }
 
 function mapGitHubPullRequest(ghpr) {
-  return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
-    repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
-    ghpr.number,
-    `PR #${ghpr.number}: ${ghpr.title}`);
+	return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
+		repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
+		ghpr.number,
+		`PR #${ghpr.number}: ${ghpr.title}`);
 }
 
 function mapLeeroyConfig(leeroyConfig) {
 	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
-	  repoBranch.create(user, repo, leeroyConfig.branch || 'master'),
+		repoBranch.create(user, repo, leeroyConfig.branch || 'master'),
 		leeroyConfig.pullRequestBuildUrls.map(function (buildUrl) {
 			var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
 			return {
@@ -98,51 +98,51 @@ function mapLeeroyConfig(leeroyConfig) {
 			};
 		})
 			.filter(job => job.name ? true : false),
-    leeroyConfig.submodules
-  );
+		leeroyConfig.submodules
+	);
 }
 
 function addPullRequest(gitHubPullRequest) {
-  var pr = mapGitHubPullRequest(gitHubPullRequest);
-  pr = state.addPullRequest(pr);
-  return Promise.all(github.repos(gitHubPullRequest.base.repo.owner.login, gitHubPullRequest.base.repo.name)
-    .issues(gitHubPullRequest.number).comments.fetch()
-    .then(comments => {
-      for (var comment of [ gitHubPullRequest.body ].concat(comments.map(x => x.body))) {
-        var match = includePr.exec(comment);
-        if (match) {
-          let included = `${match[1]}/${match[2]}/${match[3]}`;
-          pr.addInclude(included);
-          log.info(`${pr.id} includes ${included}`);
-        }
-      }
-    }));
+	var pr = mapGitHubPullRequest(gitHubPullRequest);
+	pr = state.addPullRequest(pr);
+	return Promise.all(github.repos(gitHubPullRequest.base.repo.owner.login, gitHubPullRequest.base.repo.name)
+		.issues(gitHubPullRequest.number).comments.fetch()
+		.then(comments => {
+			for (var comment of [ gitHubPullRequest.body ].concat(comments.map(x => x.body))) {
+				var match = includePr.exec(comment);
+				if (match) {
+					let included = `${match[1]}/${match[2]}/${match[3]}`;
+					pr.addInclude(included);
+					log.info(`${pr.id} includes ${included}`);
+				}
+			}
+		}));
 }
 
 // observable of all pushes to Build/Configuration
 const configurationPushes = gitHubSubjects['push']
-  .filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
-  .startWith(null)
-  .flatMap(getLeeroyConfigs)
-  .share();
+	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
+	.startWith(null)
+	.flatMap(getLeeroyConfigs)
+	.share();
 
 // update Leeroy configs every time Build/Configuration is pushed
 configurationPushes
-  .flatMap(rx.Observable.from)
-  .map(mapLeeroyConfig)
-  .subscribe(state.addBuildConfig);
+	.flatMap(rx.Observable.from)
+	.map(mapLeeroyConfig)
+	.subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
 configurationPushes
-  .flatMap(() => state.getReposToWatch())
-  .flatMap(repo => github.repos(repo).pulls.fetch())
-  .flatMap(pulls => pulls)
-  .subscribe(addPullRequest, x => log.error(x));
+	.flatMap(() => state.getReposToWatch())
+	.flatMap(repo => github.repos(repo).pulls.fetch())
+	.flatMap(pulls => pulls)
+	.subscribe(addPullRequest, x => log.error(x));
 
 // add all new PRs
 gitHubSubjects['pull_request']
-  .filter(pr => pr.action === 'opened')
-  .subscribe(pr => addPullRequest(pr).then(null, e => log.error(e)));
+	.filter(pr => pr.action === 'opened')
+	.subscribe(pr => addPullRequest(pr).then(null, e => log.error(e)));
 
 let started = false;
 function startServer(port) {

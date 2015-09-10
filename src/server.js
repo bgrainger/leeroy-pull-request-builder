@@ -107,6 +107,18 @@ function buildPullRequestPromise(prId) {
 			// submit to Jenkins
 }
 
+function readTreeAndGitmodules(repo, commit) {
+	return repo.git.trees(commit.tree.sha).fetch()
+		.then(tree => {
+			const gitmodulesItem = tree.tree.filter(x => x.path === '.gitmodules')[0];
+			return repo.git.blobs(gitmodulesItem.sha).fetch()
+				.then(blob => {
+					const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
+					return { buildHeadCommit: commit, buildHeadTree: tree, gitmodules };					
+				});
+		});
+}
+
 function buildPullRequest(prId) {
 	log.info(`Received build request for ${prId}.`);
 	const pr = state.getPr(prId);
@@ -119,15 +131,8 @@ function buildPullRequest(prId) {
 	const headCommits = configGitHub
 		.flatMap(x => x.github.git.refs('heads', x.config.repo.branch).fetch()
 			.then(ref => x.github.git.commits(ref.object.sha).fetch())
-			.then(commit => x.github.git.trees(commit.tree.sha).fetch()
-				.then(tree => {
-					const gitmodulesItem = tree.tree.filter(x => x.path === '.gitmodules')[0];
-					return x.github.git.blobs(gitmodulesItem.sha).fetch()
-						.then(blob => {
-							const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
-							return Object.assign({ buildHeadCommit: commit, buildHeadTree: tree, gitmodules }, x);						
-						});
-				})));
+			.then(commit => readTreeAndGitmodules(x.github, commit))
+			.then(y => Object.assign(y, x)));
 
 	headCommits.subscribe(x => log.info(x));
 

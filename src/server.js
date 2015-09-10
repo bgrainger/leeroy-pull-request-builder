@@ -90,10 +90,11 @@ gitHubSubjects['push']
 	.map(mapLeeroyConfig)
 	.subscribe(state.addBuildConfig);
 
-// get all existing open PRs when Build/Configuration is pushed
+// get all existing open PRs when new repos are watched
 const existingPrs = state.watchedRepos
 	.flatMap(repo => github.repos(repo).pulls.fetch())
 	.flatMap(pulls => pulls);
+// merge with new PRs that are opened while the server is running
 const newPrs = gitHubSubjects['pull_request']
 	.filter(pr => pr.action === 'opened');
 const allPrs = existingPrs.merge(newPrs);

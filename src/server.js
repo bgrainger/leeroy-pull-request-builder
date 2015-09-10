@@ -50,31 +50,6 @@ app.post('/jenkins', jenkinsWebHookHandler);
 const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
 const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 
-function getLeeroyConfigs() {
-	return github.repos('Build', 'Configuration').contents.fetch()
-		.then(contents => {
-			log.debug(`Build/Configuration has ${contents.length} files.`);
-			var jsonFiles = contents.filter(x => x.path.indexOf('.json') === x.path.length - 5);
-			return Promise.all(jsonFiles.map(elem => {
-				return github.repos('Build', 'Configuration').contents(elem.path).read()
-					.then(contents => {
-						try {
-							return JSON.parse(contents);
-						}
-						catch (e) {
-							// log.debug('Invalid JSON in ' + elem.path);
-							return null;
-						}
-					});
-			}));
-		})
-		.then(files => {
-			var configs = files.filter(f => f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl));
-			log.info(`Found ${configs.length} enabled files with submodules and PR build URLs.`);
-			return configs;
-		});
-}
-
 function mapGitHubPullRequest(ghpr) {
 	return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
 		repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
@@ -106,12 +81,16 @@ function mapLeeroyConfig(leeroyConfig) {
 const configurationPushes = gitHubSubjects['push']
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
 	.startWith(null)
-	.flatMap(getLeeroyConfigs)
 	.share();
 
 // update Leeroy configs every time Build/Configuration is pushed
 configurationPushes
-	.flatMap(rx.Observable.from)
+	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
+	.do(contents => log.debug(`Build/Configuration has ${contents.length} files.`))
+	.flatMap(contents => contents.filter(x => x.path.indexOf('.json') === x.path.length - 5))
+	.flatMap(file => github.repos('Build', 'Configuration').contents(file.path).read())
+	.map(contents => { try { return JSON.parse(contents); } catch(e) { return null; } })
+	.filter(f => f && !f.disabled && f.submodules && f.pullRequestBuildUrls && buildRepoUrl.test(f.repoUrl))
 	.map(mapLeeroyConfig)
 	.subscribe(state.addBuildConfig);
 

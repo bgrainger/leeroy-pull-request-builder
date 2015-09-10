@@ -95,8 +95,7 @@ configurationPushes
 	.subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
-const existingPrs = configurationPushes
-	.flatMap(() => state.getReposToWatch())
+const existingPrs = state.watchedRepos
 	.flatMap(repo => github.repos(repo).pulls.fetch())
 	.flatMap(pulls => pulls);
 const newPrs = gitHubSubjects['pull_request']

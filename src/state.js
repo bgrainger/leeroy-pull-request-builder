@@ -1,6 +1,7 @@
 const log = require('./logger');
 const pullRequest = require('./pull-request');
 const repoBranch = require('./repo-branch');
+const rx = require('rx');
 
 var allBuilds = [ ];
 var allPrs = { };
@@ -8,7 +9,7 @@ var prIncludes = { };
 var prIncluded = { };
 var submoduleRepos = { };
 var submoduleBuilds = { };
-
+var watchedRepos = new rx.Subject();
 
 function addBuildConfig(buildConfig) {
 	log.debug(`Adding Leeroy config for ${buildConfig.repo.id}`);
@@ -16,11 +17,14 @@ function addBuildConfig(buildConfig) {
 	allBuilds.push(buildConfig);
 	
 	for (var submodule in buildConfig.submodules) {
-		submoduleRepos[submodule] = true;
-
 		var id = `${submodule}/${buildConfig.submodules[submodule]}`;
 		submoduleBuilds[id] = submoduleBuilds[id] || [];
 		submoduleBuilds[id].push(buildConfig);
+
+		if (!submoduleRepos[submodule]) {
+			submoduleRepos[submodule] = true;
+			watchedRepos.onNext(submodule);
+		}
     }
 }
 
@@ -41,11 +45,7 @@ function addPullRequestDependency(parent, child) {
 	prIncluded[child].push(parent);
 };
 
-function getReposToWatch() {
-	return Object.keys(submoduleRepos);
-}
-
 exports.addBuildConfig = addBuildConfig;
 exports.addPullRequest = addPullRequest;
 exports.addPullRequestDependency = addPullRequestDependency;
-exports.getReposToWatch = getReposToWatch;
+exports.watchedRepos = watchedRepos;

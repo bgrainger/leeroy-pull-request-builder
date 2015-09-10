@@ -130,11 +130,11 @@ const configurationPushes = gitHubSubjects['push']
 configurationPushes.flatMap(rx.Observable.from).map(mapLeeroyConfig).subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
-configurationPushes.subscribe(x => {
-  state.getReposToWatch().map(repo => github.repos(repo).pulls.fetch()
-    .then(pulls => Promise.all(pulls.map(x => addPullRequest(x)))))
-    .then(null, e => log.error(e));
-});
+configurationPushes
+  .flatMap(() => state.getReposToWatch())
+  .flatMap(repo => github.repos(repo).pulls.fetch())
+  .flatMap(pulls => pulls)
+  .subscribe(addPullRequest, x => log.error(x));
 
 // add all new PRs
 gitHubSubjects['pull_request'].filter(pr => pr.action === 'opened')

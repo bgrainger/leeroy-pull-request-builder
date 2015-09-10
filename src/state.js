@@ -45,7 +45,39 @@ function addPullRequestDependency(parent, child) {
 	prIncluded[child].push(parent);
 };
 
+function walkGraph(edges, id) {
+	const results = new Set();
+	const queue = [ id ];
+	while (queue.length) {
+		const nextId = queue.shift();
+		results.add(nextId);
+		queue.push(...(edges[nextId] || []));
+	}
+	results.delete(id);
+	return results.values();
+}
+
+function getIncludedPrs(prId) {
+	return walkGraph(prIncludes, prId);
+}
+
+function getIncludingPrs(prId) {
+	return walkGraph(prIncluded, prId);
+}
+
+function getPr(prId) {
+	return allPrs[prId];
+}
+
+function getPrBuilds(pr) {
+	return submoduleBuilds[pr.base.id];
+}
+
 exports.addBuildConfig = addBuildConfig;
 exports.addPullRequest = addPullRequest;
 exports.addPullRequestDependency = addPullRequestDependency;
+exports.getIncludedPrs = getIncludedPrs;
+exports.getIncludingPrs = getIncludingPrs;
+exports.getPr = getPr;
+exports.getPrBuilds = getPrBuilds;
 exports.watchedRepos = watchedRepos;

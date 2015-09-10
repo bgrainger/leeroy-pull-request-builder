@@ -124,7 +124,7 @@ const configurationPushes = gitHubSubjects['push']
   .flatMap(rx.Observable.fromPromise(getLeeroyConfigs()));
 
 // update Leeroy configs every time Build/Configuration is pushed
-configurationPushes.flatMap(rx.Observable.from).subscribe(x => state.addBuildConfig(mapLeeroyConfig(x)));
+configurationPushes.flatMap(rx.Observable.from).map(mapLeeroyConfig).subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
 configurationPushes.subscribe(x => {

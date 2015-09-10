@@ -127,7 +127,10 @@ const configurationPushes = gitHubSubjects['push']
   .share();
 
 // update Leeroy configs every time Build/Configuration is pushed
-configurationPushes.flatMap(rx.Observable.from).map(mapLeeroyConfig).subscribe(state.addBuildConfig);
+configurationPushes
+  .flatMap(rx.Observable.from)
+  .map(mapLeeroyConfig)
+  .subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
 configurationPushes
@@ -137,7 +140,8 @@ configurationPushes
   .subscribe(addPullRequest, x => log.error(x));
 
 // add all new PRs
-gitHubSubjects['pull_request'].filter(pr => pr.action === 'opened')
+gitHubSubjects['pull_request']
+  .filter(pr => pr.action === 'opened')
   .subscribe(pr => addPullRequest(pr).then(null, e => log.error(e)));
 
 let started = false;

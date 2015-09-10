@@ -28,7 +28,7 @@
     "express": "^4.13.3",
     "immutable": "^3.7.4",
     "octokat": "^0.4.11",
-    "rx": "^3.1.1",
+    "rx": "^3.1.2",
     "superagent": "^1.3.0",
     "superagent-promise": "^1.0.3"
   }

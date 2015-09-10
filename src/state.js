@@ -4,6 +4,8 @@ const repoBranch = require('./repo-branch');
 
 var allBuilds = [ ];
 var allPrs = { };
+var prIncludes = { };
+var prIncluded = { };
 var submoduleRepos = { };
 var submoduleBuilds = { };
 
@@ -31,10 +33,19 @@ function addPullRequest(pr) {
 	return pr;
 }
 
+function addPullRequestDependency(parent, child) {
+	log.info(`Adding link from ${parent} to ${child}`);
+	prIncludes[parent] = prIncludes[parent] || [];
+	prIncludes[parent].push(child);
+	prIncluded[child] = prIncluded[child] || [];
+	prIncluded[child].push(parent);
+};
+
 function getReposToWatch() {
 	return Object.keys(submoduleRepos);
 }
 
 exports.addBuildConfig = addBuildConfig;
 exports.addPullRequest = addPullRequest;
+exports.addPullRequestDependency = addPullRequestDependency;
 exports.getReposToWatch = getReposToWatch;

@@ -86,6 +86,10 @@ function mapGitHubPullRequest(ghpr) {
 		`PR #${ghpr.number}: ${ghpr.title}`);
 }
 
+function getGitHubPullRequestId(ghpr) {
+	return mapGitHubPullRequest(ghpr).id;
+}
+
 function mapLeeroyConfig(leeroyConfig) {
 	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
@@ -102,23 +106,6 @@ function mapLeeroyConfig(leeroyConfig) {
 	);
 }
 
-function addPullRequest(gitHubPullRequest) {
-	var pr = mapGitHubPullRequest(gitHubPullRequest);
-	pr = state.addPullRequest(pr);
-	return Promise.all(github.repos(gitHubPullRequest.base.repo.owner.login, gitHubPullRequest.base.repo.name)
-		.issues(gitHubPullRequest.number).comments.fetch()
-		.then(comments => {
-			for (var comment of [ gitHubPullRequest.body ].concat(comments.map(x => x.body))) {
-				var match = includePr.exec(comment);
-				if (match) {
-					let included = `${match[1]}/${match[2]}/${match[3]}`;
-					pr.addInclude(included);
-					log.info(`${pr.id} includes ${included}`);
-				}
-			}
-		}));
-}
-
 // observable of all pushes to Build/Configuration
 const configurationPushes = gitHubSubjects['push']
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
@@ -133,16 +120,33 @@ configurationPushes
 	.subscribe(state.addBuildConfig);
 
 // get all existing open PRs when Build/Configuration is pushed
-configurationPushes
+const existingPrs = configurationPushes
 	.flatMap(() => state.getReposToWatch())
 	.flatMap(repo => github.repos(repo).pulls.fetch())
-	.flatMap(pulls => pulls)
-	.subscribe(addPullRequest, x => log.error(x));
+	.flatMap(pulls => pulls);
+const newPrs = gitHubSubjects['pull_request']
+	.filter(pr => pr.action === 'opened');
+const allPrs = existingPrs.merge(newPrs);
 
-// add all new PRs
-gitHubSubjects['pull_request']
-	.filter(pr => pr.action === 'opened')
-	.subscribe(pr => addPullRequest(pr).then(null, e => log.error(e)));
+allPrs
+	.map(mapGitHubPullRequest)
+	.subscribe(state.addPullRequest);
+
+const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
+const existingIssueComments = existingPrs
+	.flatMap(x => {
+		const id = getGitHubPullRequestId(x);
+		return rx.Observable.fromPromise(github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch())
+			.flatMap(x => { id, x.body });
+	});
+const newIssueComments = gitHubSubjects['issue_comment']
+	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
+	
+const allComments = allPrBodies.merge(existingIssueComments).merge(newIssueComments)
+	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
+	.filter(x => x.match)
+	.map(x => ({ parent: x.id, child: `${x.match[1]}/${x.match[2]}/${x.match[3]}` }))
+	.subscribe(x => state.addPullRequestDependency(x.parent, x.child), e => log.error(e));
 
 let started = false;
 function startServer(port) {

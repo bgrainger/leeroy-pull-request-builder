@@ -8,6 +8,8 @@ const state = require('./state');
 const pullRequest = require('./pull-request');
 const repoBranch = require('./repo-branch');
 
+rx.config.longStackSupport = true;
+
 let app = express();
 app.use(bodyParser.json());
 

@@ -172,10 +172,9 @@ function buildPullRequest(prId) {
 		.map(config => ({ config, github: github.repos(config.repo.user, config.repo.repo) }))
 		.flatMap(x => x.github.git.refs('heads', x.config.repo.branch).fetch()
 			.then(ref => x.github.git.commits(ref.object.sha).fetch())
-			.then(commit => readTreeAndGitmodules(x.github, commit))
-			.then(y => Object.assign(x, y)));
+			.then(commit => readTreeAndGitmodules(x.github, commit)), Object.assign);
 
-	const updatedCommits = buildDatas.flatMap(x => createNewCommit(x, state.getIncludedPrs(prId)).then(y => Object.assign(x, y)));
+	const updatedCommits = buildDatas.flatMap(x => createNewCommit(x, state.getIncludedPrs(prId)), Object.assign);
 
 	updatedCommits.subscribe(x => log.info(x), e => log.error(e));
 

@@ -78,33 +78,30 @@ function mapLeeroyConfig(name, leeroyConfig) {
 	);
 }
 
-function buildPullRequestPromise(prId) {
-	log.info(`Received build request for ${prId}.`);
-	return Promise.all(Array.from(state.getIncludingPrs()).map(prId => buildPullRequestPromise(prId)))
-		.then(x => [].concat.apply([], x))
-		.then(configs => {
-			log.info(`Previously built configs for ${prId} are: ${configs}`);
-			const previouslyBuilt = new Set(configs);
+/**
+ * Calls the GitHub Status API to set the state for 'sha'.
+ * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
+ */
+function setStatus(user, repo, sha, context, state, description, targetUrl) {
+  return github.repos(user, repo).statuses(sha).create({
+    state: state,
+    description: description,
+    target_url: targetUrl,
+    context: context
+  });
+}
 
-			const pr = state.getPr(prId);
-			const buildConfigs = state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x));
-			log.info(`Configs to build are: ${buildConfigs.map(x => x.id)}`);
-			return Promise.all(configs.map(config => {
-
-			}));
-		});
-	// build all including PRs, get their build configs
-	// find all affected build configs (minus previously built); for each:
-		// get head commit, tree, .gitmodules blob
-		// get all included PRs; for each:
-			// update tree sha
-			// update .gitmodules path
-		// create .gitmodules blob
-		// create new tree
-		// create new commit
-		// for each job:
-			// set pending status
-			// submit to Jenkins
+/**
+ * Calls the GitHub Status API to set the state to "pending" using a unique context for each element
+ * of `buildData.config.jobs`.
+ */
+function setPendingStatus(buildData, description) {
+	return Promise.all(buildData.config.jobs.map(job => setStatus(buildData.pullRequests[0].base.user,
+		buildData.pullRequests[0].base.repo,
+		buildData.gitHubPullRequests[0].head.sha,
+		`Jenkins: ${job.name}`,
+		'pending',
+		description)));
 }
 
 function readTreeAndGitmodules(repo, commit) {
@@ -205,7 +202,9 @@ function buildPullRequest(prId) {
 		.flatMap(buildData => Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch())),
 			(buildData, gitHubPullRequests) => Object.assign(buildData, { gitHubPullRequests }));			
 
-	const updatedCommits = buildDatas.flatMap(createNewCommit, Object.assign);
+	const updatedCommits = buildDatas
+		.flatMap(buildData => setPendingStatus(buildData, 'Preparing Jenkins build'), (buildData, statuses) => buildData)
+		.flatMap(createNewCommit, Object.assign);
 
 	updatedCommits.subscribe(x => log.info(x), e => log.error(e));
 

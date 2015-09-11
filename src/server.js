@@ -119,55 +119,53 @@ function readTreeAndGitmodules(repo, commit) {
 		});
 }
 
-function createNewCommit(buildData, includedPrIds) {
-	var includedPrs = Array.from(includedPrIds).map(state.getPr);
-	return Promise.all(includedPrs.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch().then(ghpr => ({ pr, ghpr }))))
-		.then(prs => {
-			const newTreeItems = [];
-			for (let pr of prs) {
-				const oldSubmodule = `git@git:${pr.pr.base.user}/${pr.pr.base.repo}.git`;
-				const newSubmodule = `git@git:${pr.pr.head.user}/${pr.pr.head.repo}.git`;
-				log.debug(`Changing submodule repo from ${oldSubmodule} to ${newSubmodule}`);
-				buildData.gitmodules = buildData.gitmodules.replace(oldSubmodule, newSubmodule);
+function createNewCommit(buildData) {
+	const newTreeItems = [];
+	for (var i = 0; i < buildData.pullRequests.length; i++) {
+		var pr = buildData.pullRequests[i];
+		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
+		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
+		log.debug(`Changing submodule repo from ${oldSubmodule} to ${newSubmodule}`);
+		buildData.gitmodules = buildData.gitmodules.replace(oldSubmodule, newSubmodule);
 
-				var treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.pr.base.repo)[0];
-				log.debug(`Changing submodule SHA from ${treeItem.sha.substr(0, 8)} to ${pr.ghpr.head.sha.substr(0, 8)}`);
-				treeItem.sha = pr.ghpr.head.sha;
-				newTreeItems.push(treeItem);
-			}
+		var treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
+		var newSubmoduleSha = buildData.gitHubPullRequests[i].head.sha;
+		log.debug(`Changing submodule SHA from ${treeItem.sha.substr(0, 8)} to ${newSubmoduleSha.substr(0, 8)}`);
+		treeItem.sha = newSubmoduleSha;
+		newTreeItems.push(treeItem);
+	}
 
-			const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
-			return buildData.github.git.blobs.create({ content: buildData.gitmodules })
-				.then(newBlob => {
-					gitmodulesItem.sha = newBlob.sha;
-					newTreeItems.push(gitmodulesItem);
-					return buildData.github.git.trees.create({
-						base_tree: buildData.headTree.sha,
-						tree: newTreeItems
-					});
+	const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
+	return buildData.github.git.blobs.create({ content: buildData.gitmodules })
+		.then(newBlob => {
+			gitmodulesItem.sha = newBlob.sha;
+			newTreeItems.push(gitmodulesItem);
+			return buildData.github.git.trees.create({
+				base_tree: buildData.headTree.sha,
+				tree: newTreeItems
+			})
 		})
 		.then(newTree => {
 			log.debug(`New tree SHA is ${newTree.sha}`);
 			return buildData.github.git.commits.create({
-				message: includedPrs[0].title,
+				message: buildData.pullRequests[0].title,
 				tree: newTree.sha,
 				parents: [ buildData.headCommit.sha ]
 			})
-				.then(newCommit => {
-					log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${newCommit.sha}`);
-					const refName = `heads/lprb-${includedPrs[0].number}`;
-					return buildData.github.git.refs(refName).fetch()
-						.then(() => buildData.github.git.refs(refName).update({
-							sha: newCommit.sha,
-							force: true
-						}), () => buildData.github.git.refs.create({
-							ref: 'refs/' + refName,
-							sha: newCommit.sha
-						}))
-						.then(newRef => ({ newCommit }));
-				});
+		})
+		.then(newCommit => {
+			log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${newCommit.sha}`);
+			const refName = `heads/lprb-${buildData.pullRequests[0].number}`;
+			return buildData.github.git.refs(refName).fetch()
+				.then(() => buildData.github.git.refs(refName).update({
+					sha: newCommit.sha,
+					force: true
+				}), () => buildData.github.git.refs.create({
+					ref: 'refs/' + refName,
+					sha: newCommit.sha
+				}))
+				.then(newRef => ({ newCommit }));
 		});
-	});
 }
 
 function buildPullRequest(prId) {
@@ -176,14 +174,21 @@ function buildPullRequest(prId) {
 	
 	const builtConfigs = rx.Observable.from(state.getIncludingPrs()).flatMap(prId => buildPullRequest(prId)).toSet();
 	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x)));
-	const buildDatas = configsToBuild
+	let buildDatas = configsToBuild
 		.do(config => log.debug(`Will build ${config.id}`))
-		.map(config => ({ config, github: github.repos(config.repo.user, config.repo.repo) }))
-		.flatMap(x => x.github.git.refs('heads', x.config.repo.branch).fetch()
-			.then(ref => x.github.git.commits(ref.object.sha).fetch())
-			.then(commit => readTreeAndGitmodules(x.github, commit)), Object.assign);
+		.map(config => ({ config,
+			github: github.repos(config.repo.user, config.repo.repo),
+			pullRequests: Array.from(state.getIncludedPrs(prId)).map(state.getPr)
+		}));
+	buildDatas = buildDatas
+		.flatMap(buildData => buildData.github.git.refs('heads', buildData.config.repo.branch).fetch()
+			.then(ref => buildData.github.git.commits(ref.object.sha).fetch())
+			.then(commit => readTreeAndGitmodules(buildData.github, commit)), Object.assign);
+	buildDatas = buildDatas
+		.flatMap(buildData => Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch())),
+			(buildData, gitHubPullRequests) => Object.assign(buildData, { gitHubPullRequests }));			
 
-	const updatedCommits = buildDatas.flatMap(x => createNewCommit(x, state.getIncludedPrs(prId)), Object.assign);
+	const updatedCommits = buildDatas.flatMap(createNewCommit, Object.assign);
 
 	updatedCommits.subscribe(x => log.info(x), e => log.error(e));
 

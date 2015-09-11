@@ -169,13 +169,13 @@ function buildPullRequest(prId) {
 	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x)));
 	const buildDatas = configsToBuild
 		.do(config => log.debug(`Will build ${config.id}`))
-		.map(config => ({ config: config, github: github.repos(config.repo.user, config.repo.repo) }))
+		.map(config => ({ config, github: github.repos(config.repo.user, config.repo.repo) }))
 		.flatMap(x => x.github.git.refs('heads', x.config.repo.branch).fetch()
 			.then(ref => x.github.git.commits(ref.object.sha).fetch())
 			.then(commit => readTreeAndGitmodules(x.github, commit))
-			.then(y => Object.assign(y, x)));
+			.then(y => Object.assign(x, y)));
 
-	const updatedCommits = buildDatas.flatMap(x => createNewCommit(x, state.getIncludedPrs(prId)).then(y => Object.assign(y, x)));
+	const updatedCommits = buildDatas.flatMap(x => createNewCommit(x, state.getIncludedPrs(prId)).then(y => Object.assign(x, y)));
 
 	updatedCommits.subscribe(x => log.info(x), e => log.error(e));
 

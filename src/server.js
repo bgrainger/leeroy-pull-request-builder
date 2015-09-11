@@ -153,9 +153,18 @@ function createNewCommit(buildData, includedPrIds) {
 				tree: newTree.sha,
 				parents: [ buildData.headCommit.sha ]
 			})
-				.then(commit => {
-					log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${commit.sha}`);
-					return { newCommit: commit };
+				.then(newCommit => {
+					log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${newCommit.sha}`);
+					const refName = `heads/lprb-${includedPrs[0].number}`;
+					return buildData.github.git.refs(refName).fetch()
+						.then(() => buildData.github.git.refs(refName).update({
+							sha: newCommit.sha,
+							force: true
+						}), () => buildData.github.git.refs.create({
+							ref: 'refs/' + refName,
+							sha: newCommit.sha
+						}))
+						.then(newRef => ({ newCommit }));
 				});
 		});
 	});

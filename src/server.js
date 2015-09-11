@@ -171,19 +171,36 @@ function createNewCommit(buildData) {
 function buildPullRequest(prId) {
 	log.info(`Received build request for ${prId}.`);
 	const pr = state.getPr(prId);
-	
+
+	// call buildPullRequest (recursively) to build all PRs that include this PR
 	const builtConfigs = rx.Observable.from(state.getIncludingPrs()).flatMap(prId => buildPullRequest(prId)).toSet();
+
+	// find all the configurations this PR affects
 	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x)));
+
+	/**
+	 * buildData is an object about the build with the following properties:
+	 * 	config : a buildConfig
+	 * 	github : an octokat 'repo' object for the Build repo
+	 * 	headCommit : a GitHub Git Commit object for the HEAD of the branch to build in the Build Repo; see https://developer.github.com/v3/git/commits/
+	 * 	headTree : a GitHub Git Tree object for that commit's tree; see https://developer.github.com/v3/git/trees/
+	 *	gitmodules : the contents of the '.gitmodules' file in the Build repo
+	 * 	pullRequests : an array of pullRequest objects that need to be included
+	 * 	gitHubPullRequests : an array of GitHub Pull Request objects one for the tip of each item in pullRequests (above); see https://developer.github.com/v3/pulls/#get-a-single-pull-request
+	 */
+	// set the config, github and pullRequests properties 
 	let buildDatas = configsToBuild
 		.do(config => log.debug(`Will build ${config.id}`))
 		.map(config => ({ config,
 			github: github.repos(config.repo.user, config.repo.repo),
 			pullRequests: Array.from(state.getIncludedPrs(prId)).map(state.getPr)
 		}));
+	// add the headCommit, headTree, and gitmodules properties
 	buildDatas = buildDatas
 		.flatMap(buildData => buildData.github.git.refs('heads', buildData.config.repo.branch).fetch()
 			.then(ref => buildData.github.git.commits(ref.object.sha).fetch())
 			.then(commit => readTreeAndGitmodules(buildData.github, commit)), Object.assign);
+	// add the gitHubPullRequests properties
 	buildDatas = buildDatas
 		.flatMap(buildData => Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch())),
 			(buildData, gitHubPullRequests) => Object.assign(buildData, { gitHubPullRequests }));			

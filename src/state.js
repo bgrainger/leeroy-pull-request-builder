@@ -53,16 +53,17 @@ function walkGraph(edges, id) {
 		results.add(nextId);
 		queue.push(...(edges[nextId] || []));
 	}
-	results.delete(id);
-	return results.values();
+	return results;
 }
 
 function getIncludedPrs(prId) {
-	return walkGraph(prIncludes, prId);
+	return walkGraph(prIncludes, prId).values();
 }
 
 function getIncludingPrs(prId) {
-	return walkGraph(prIncluded, prId);
+	const including =  walkGraph(prIncluded, prId);
+	including.delete(prId);
+	return including.values();
 }
 
 function getPr(prId) {

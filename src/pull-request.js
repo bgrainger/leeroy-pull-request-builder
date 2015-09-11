@@ -8,7 +8,6 @@ function create(base, head, number, title) {
 		head: { value: head },
 		number: { value: number },
 		title: { value: title },
-		includes: { value: [] },
 		id: { get: function() { return `${this.base.user}/${this.base.repo}/${this.number}`; } }
 	});
 }

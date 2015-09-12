@@ -80,19 +80,10 @@ function mapLeeroyConfig(name, leeroyConfig) {
 }
 
 /**
- * Calls the GitHub Status API to set the state for 'sha'.
+ * Calls the GitHub Status API to set the state for the primary pull request in 'buildData'.
  * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
  */
-function setStatus(user, repo, sha, context, state, description, targetUrl) {
-  return github.repos(user, repo).statuses(sha).create({
-    state: state,
-    description: description,
-    target_url: targetUrl,
-    context: context
-  });
-}
-
-function setBuildDataStatus(buildData, context, state, description, target_url) {
+function setStatus(buildData, context, state, description, target_url) {
 	return github.repos(buildData.pullRequests[0].base.user, buildData.pullRequests[0].base.repo)
 		.statuses(buildData.gitHubPullRequests[0].head.sha)
 		.create({ state, description, target_url, context });
@@ -103,7 +94,7 @@ function setBuildDataStatus(buildData, context, state, description, target_url) 
  * of `buildData.config.jobs`.
  */
 function setPendingStatus(buildData, description) {
-	return Promise.all(buildData.config.jobs.map(job => setBuildDataStatus(buildData,
+	return Promise.all(buildData.config.jobs.map(job => setStatus(buildData,
 		`Jenkins: ${job.name}`,
 		'pending',
 		description)));
@@ -306,7 +297,7 @@ var jenkinsNotifications = jenkinsSubject
 jenkinsNotifications
 	.filter(x => x.job.build.phase === 'STARTED')
 	.subscribe(x => {
-		setBuildDataStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
+		setStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
 		superagent.post(x.job.build.full_url + '/submitDescription')
             .type('form')
             .send({ description: x.buildData.pullRequests[0].title, Submit: 'Submit' })
@@ -317,7 +308,7 @@ jenkinsNotifications
 	.filter(x => x.job.build.phase === 'COMPLETED')
 	.do(x => log.info(`Job ${x.job.name} status is ${x.job.build.status}`))
 	.subscribe(x => {
-		setBuildDataStatus(x.buildData,
+		setStatus(x.buildData,
 			`Jenkins: ${x.job.name}`,
 			x.job.build.status === 'SUCCESS' ? 'success' : 'failure',
 			`Jenkins build status: ${x.job.build.status}`,

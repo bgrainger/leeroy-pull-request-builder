@@ -297,7 +297,7 @@ newIssueComments.subscribe(comment => {
 }, e => log.error(e));
 
 gitHubSubjects['pull_request']
-	.filter(pr => pr.action === 'opened' || pr.action === 'synchronize')
+	.filter(pr => pr.action === 'opened' || pr.action === 'reopened' || pr.action === 'synchronize')
 	.pluck('pull_request')
 	.map(mapGitHubPullRequest)
 	.delaySubscription(1000) // feels hacky but we need state to have been updated

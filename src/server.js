@@ -125,25 +125,33 @@ function createNewCommit(buildData) {
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
 		if (treeItem) {
 			const githubBase = github.repos(pr.base.user, pr.base.repo);
+			const prHeadSha = buildData.gitHubPullRequests[index].head.sha;		
 			return githubBase.git.refs('heads', pr.base.branch).fetch()
 				.then(ref => ref.object.sha)
 				.then(headSha => moveBranch(githubBase, buildBranchName, headSha)
 					.then(ref => {
-						const head = buildData.gitHubPullRequests[index].head.sha;
-						log.info(`Merging ${head.substr(0, 8)} into ${buildBranchName} in ${pr.base.user}/${pr.base.repo}`);
+						log.info(`Merging ${prHeadSha.substr(0, 8)} into ${buildBranchName} in ${pr.base.user}/${pr.base.repo}`);
 						return githubBase.merges.create({
 							base: buildBranchName,
-							head,
+							head: prHeadSha,
 							commit_message: buildData.pullRequests[0].title
 						});
 					}))
-				.then(merge => ({
-					user: pr.base.user,
-					repo: pr.base.repo,
-					treeItem: Object.assign(treeItem, { sha: merge.sha })
-				}), e => {
-					log.error(`Couldn't merge: ${e}`);
-					return null;
+				.then(merge => {
+					log.info(`Merged ${prHeadSha.substr(0, 8)} into ${pr.base.user}/${pr.base.repo}/${buildBranchName}: SHA is ${merge.sha}`);
+					return {
+						user: pr.base.user,
+						repo: pr.base.repo,
+						treeItem: Object.assign(treeItem, { sha: merge.sha })
+					};
+				}, e => {
+					log.error(`Couldn't merge ${prHeadSha.substr(0, 8)} into ${pr.base.user}/${pr.base.repo}/${buildBranchName}: ${e}`);
+					// fall back to building with PR's commit instead of merge result
+					return {
+						user: pr.base.user,
+						repo: pr.base.repo,
+						treeItem: Object.assign(treeItem, { sha: prHeadSha })
+					};
 				});
 		} else {
 			log.debug(`Submodule ${pr.base.repo} not found; skipping`);

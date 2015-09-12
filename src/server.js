@@ -104,16 +104,23 @@ function setPendingStatus(buildData, description) {
 		description)));
 }
 
-function readTreeAndGitmodules(repo, commit) {
-	return repo.git.trees(commit.tree.sha).fetch()
-		.then(tree => {
-			const gitmodulesItem = tree.tree.filter(x => x.path === '.gitmodules')[0];
-			return repo.git.blobs(gitmodulesItem.sha).fetch()
-				.then(blob => {
-					const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
-					return { headCommit: commit, headTree: tree, gitmodules };					
-				});
-		});
+function fetchTreeAndGitmodules(buildData) {
+	return buildData.github.git.refs('heads', buildData.config.repo.branch).fetch()
+		.then(ref => buildData.github.git.commits(ref.object.sha).fetch())
+		.then(headCommit => buildData.github.git.trees(headCommit.tree.sha).fetch()
+			.then(headTree => {
+				const gitmodulesItem = headTree.tree.filter(x => x.path === '.gitmodules')[0];
+				return buildData.github.git.blobs(gitmodulesItem.sha).fetch()
+					.then(blob => {
+						const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
+						return { headCommit, headTree, gitmodules };					
+					});
+			}));
+}
+
+function fetchGitHubPullRequests(buildData) {
+	return Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch()))
+		.then(gitHubPullRequests => ({ gitHubPullRequests }));
 }
 
 function createNewCommit(buildData) {
@@ -135,6 +142,7 @@ function createNewCommit(buildData) {
 	const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
 	return buildData.github.git.blobs.create({ content: buildData.gitmodules })
 		.then(newBlob => {
+			log.debug(`New blob SHA is ${newBlob.sha}`);
 			gitmodulesItem.sha = newBlob.sha;
 			newTreeItems.push(gitmodulesItem);
 			return buildData.github.git.trees.create({
@@ -187,20 +195,18 @@ function buildPullRequest(prId) {
 	 */
 	// set the config, github and pullRequests properties 
 	let buildDatas = configsToBuild
-		.do(config => log.debug(`Will build ${config.id}`))
-		.map(config => ({ config,
+		.do(config => log.info(`Will build ${config.id}`))
+		.map(config => ({
+			config,
 			github: github.repos(config.repo.user, config.repo.repo),
 			pullRequests: Array.from(state.getIncludedPrs(prId)).map(state.getPr)
 		}));
+
 	// add the headCommit, headTree, and gitmodules properties
-	buildDatas = buildDatas
-		.flatMap(buildData => buildData.github.git.refs('heads', buildData.config.repo.branch).fetch()
-			.then(ref => buildData.github.git.commits(ref.object.sha).fetch())
-			.then(commit => readTreeAndGitmodules(buildData.github, commit)), Object.assign);
+	buildDatas = buildDatas.flatMap(fetchTreeAndGitmodules, Object.assign);
+
 	// add the gitHubPullRequests properties
-	buildDatas = buildDatas
-		.flatMap(buildData => Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch())),
-			(buildData, gitHubPullRequests) => Object.assign(buildData, { gitHubPullRequests }));			
+	buildDatas = buildDatas.flatMap(fetchGitHubPullRequests, Object.assign);			
 
 	const updatedCommits = buildDatas
 		.flatMap(buildData => setPendingStatus(buildData, 'Preparing Jenkins build'), (buildData, statuses) => buildData)

@@ -169,16 +169,16 @@ function createNewCommit(buildData) {
 		})
 		.then(newCommit => {
 			log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${newCommit.sha}`);
-			const refName = `heads/lprb-${buildData.pullRequests[0].number}`;
-			return buildData.github.git.refs(refName).fetch()
-				.then(() => buildData.github.git.refs(refName).update({
+			const buildBranchName = `heads/lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}`;
+			return buildData.github.git.refs(buildBranchName).fetch()
+				.then(() => buildData.github.git.refs(buildBranchName).update({
 					sha: newCommit.sha,
 					force: true
 				}), () => buildData.github.git.refs.create({
-					ref: 'refs/' + refName,
+					ref: 'refs/' + buildBranchName,
 					sha: newCommit.sha
 				}))
-				.then(newRef => ({ newCommit }));
+				.then(newRef => ({ newCommit, buildBranchName }));
 		});
 }
 
@@ -322,6 +322,8 @@ jenkinsNotifications
 			x.job.build.status === 'SUCCESS' ? 'success' : 'failure',
 			`Jenkins build status: ${x.job.build.status}`,
 			x.job.build.full_url);
+		x.buildData.github.git.refs(x.buildData.buildBranchName).remove()
+			.then(success => log.debug(`Branch ${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
 	}, e => log.error(e));
 
 let started = false;

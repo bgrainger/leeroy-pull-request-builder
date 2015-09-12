@@ -53,7 +53,7 @@ function mapGitHubPullRequest(ghpr) {
 	return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
 		repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
 		ghpr.number,
-		`PR #${ghpr.number}: ${ghpr.title}`);
+		`PR${ghpr.number}: ${ghpr.title}`);
 }
 
 function getGitHubPullRequestId(ghpr) {

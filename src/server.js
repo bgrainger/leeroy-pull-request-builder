@@ -23,7 +23,9 @@ const gitHubSubjects = {
 	'ping': new rx.Subject()
 };
 
-const jenkinsSubject =new rx.Subject(); 
+const jenkinsSubject = new rx.Subject(); 
+
+let uniqueSuffix = 1;
 
 const app = express();
 app.use(bodyParser.json());
@@ -117,60 +119,78 @@ function fetchGitHubPullRequests(buildData) {
 }
 
 function createNewCommit(buildData) {
-	const newTreeItems = [];
-	for (var i = 0; i < buildData.pullRequests.length; i++) {
-		const pr = buildData.pullRequests[i];
+	const buildBranchName = `lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}-${uniqueSuffix}`;
+	uniqueSuffix++;
+	return Promise.all(buildData.pullRequests.map((pr, index) => {
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
 		if (treeItem) {
-			const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
-			const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
-			log.debug(`Changing submodule repo from ${oldSubmodule} to ${newSubmodule}`);
-			buildData.gitmodules = buildData.gitmodules.replace(oldSubmodule, newSubmodule);
-
-			var newSubmoduleSha = buildData.gitHubPullRequests[i].head.sha;
-			log.debug(`Changing submodule SHA from ${treeItem.sha.substr(0, 8)} to ${newSubmoduleSha.substr(0, 8)}`);
-			treeItem.sha = newSubmoduleSha;
-			newTreeItems.push(treeItem);
+			const githubBase = github.repos(pr.base.user, pr.base.repo);
+			return githubBase.git.refs('heads', pr.base.branch).fetch()
+				.then(ref => ref.object.sha)
+				.then(headSha => moveBranch(githubBase, buildBranchName, headSha)
+					.then(ref => {
+						const head = buildData.gitHubPullRequests[index].head.sha;
+						log.info(`Merging ${head.substr(0, 8)} into ${buildBranchName} in ${pr.base.user}/${pr.base.repo}`);
+						return githubBase.merges.create({
+							base: buildBranchName,
+							head,
+							commit_message: buildData.pullRequests[0].title
+						});
+					}))
+				.then(merge => ({
+					user: pr.base.user,
+					repo: pr.base.repo,
+					treeItem: Object.assign(treeItem, { sha: merge.sha })
+				}), e => {
+					log.error(`Couldn't merge: ${e}`);
+					return null;
+				});
 		} else {
 			log.debug(`Submodule ${pr.base.repo} not found; skipping`);
+			return Promise.resolve(null);
 		}
-	}
-
-	const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
-	return buildData.github.git.blobs.create({ content: buildData.gitmodules })
-		.then(newBlob => {
-			log.debug(`New blob SHA is ${newBlob.sha}`);
-			gitmodulesItem.sha = newBlob.sha;
-			newTreeItems.push(gitmodulesItem);
-			return buildData.github.git.trees.create({
-				base_tree: buildData.headTree.sha,
-				tree: newTreeItems
-			})
-		})
-		.then(newTree => {
-			log.debug(`New tree SHA is ${newTree.sha}`);
-			return buildData.github.git.commits.create({
-				message: buildData.pullRequests[0].title,
-				tree: newTree.sha,
-				parents: [ buildData.headCommit.sha ]
-			})
-		})
-		.then(newCommit => {
-			const buildBranchName = `heads/lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}`;
-			log.info(`New commit SHA is ${newCommit.sha}; moving ${buildData.config.repo.user}/${buildData.config.repo.repo}${buildBranchName}`);
-			return buildData.github.git.refs(buildBranchName).fetch()
-				.then(() => buildData.github.git.refs(buildBranchName).update({
-					sha: newCommit.sha,
-					force: true
-				}), () => buildData.github.git.refs.create({
-					ref: 'refs/' + buildBranchName,
-					sha: newCommit.sha
-				}))
-				.then(newRef => ({ newCommit, buildBranchName }));
+	}))
+		.then(submoduleTreeItems => {
+			const newTreeItems = submoduleTreeItems.map(x => x.treeItem);
+			const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
+			return buildData.github.git.blobs.create({ content: buildData.gitmodules })
+				.then(newBlob => {
+					log.debug(`New blob SHA is ${newBlob.sha}`);
+					gitmodulesItem.sha = newBlob.sha;
+					newTreeItems.push(gitmodulesItem);
+					return buildData.github.git.trees.create({
+						base_tree: buildData.headTree.sha,
+						tree: newTreeItems.filter(x => x ? true : false)
+					})
+				})
+				.then(newTree => {
+					log.debug(`New tree SHA is ${newTree.sha}`);
+					return buildData.github.git.commits.create({
+						message: buildData.pullRequests[0].title,
+						tree: newTree.sha,
+						parents: [ buildData.headCommit.sha ]
+					})
+				})
+				.then(newCommit => {
+					log.info(`New commit SHA is ${newCommit.sha}; moving ${buildData.config.repo.user}/${buildData.config.repo.repo}/${buildBranchName}`);
+					return moveBranch(buildData.github, buildBranchName, newCommit.sha)
+						.then(newRef => ({
+							newCommit,
+							buildBranchName,
+							submoduleBranches: submoduleTreeItems.map(x => repoBranch.create(x.user, x.repo, buildBranchName))
+						}));
+				});
 		});
 }
 
-let activeBuilds = new Map();
+function moveBranch(repo, branch, sha) {
+	const refName = `heads/${branch}`;
+	return repo.git.refs(refName).fetch()
+		.then(() => repo.git.refs(refName).update({ sha, force: true }),
+			() => repo.git.refs.create({ sha, ref: `refs/${refName}` }));
+}
+
+const activeBuilds = new Map();
 
 function startBuilds(buildData) {
 	activeBuilds.set(buildData.newCommit.sha, buildData);	
@@ -311,8 +331,12 @@ jenkinsNotifications
 			x.job.build.status === 'SUCCESS' ? 'success' : 'failure',
 			`Jenkins build status: ${x.job.build.status}`,
 			x.job.build.full_url);
-		x.buildData.github.git.refs(x.buildData.buildBranchName).remove()
-			.then(success => log.debug(`Branch ${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
+		x.buildData.github.git.refs(`heads/${x.buildData.buildBranchName}`).remove()
+			.then(success => log.debug(`Branch ${x.buildData.config.repo.user}/${x.buildData.config.repo.repo}/${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
+		for (let sb of x.buildData.submoduleBranches) {
+			github.repos(sb.user, sb.repo).git.refs(`heads/${sb.branch}`).remove()
+				.then(success => log.debug(`Branch ${sb.user}/${sb.repo}/${sb.branch} was ${success ? '' : 'not '}deleted`));
+		}
 	}, e => log.error(e));
 
 let started = false;

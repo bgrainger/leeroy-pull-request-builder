@@ -122,6 +122,8 @@ function createNewCommit(buildData) {
 	const buildBranchName = `lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}-${uniqueSuffix}`;
 	uniqueSuffix++;
 	return Promise.all(buildData.pullRequests.map((pr, index) => {
+		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
+		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
 		if (treeItem) {
 			const githubBase = github.repos(pr.base.user, pr.base.repo);
@@ -150,7 +152,9 @@ function createNewCommit(buildData) {
 					return {
 						user: pr.base.user,
 						repo: pr.base.repo,
-						treeItem: Object.assign(treeItem, { sha: prHeadSha })
+						treeItem: Object.assign(treeItem, { sha: prHeadSha }),
+						oldSubmodule,
+						newSubmodule
 					};
 				});
 		} else {
@@ -158,7 +162,13 @@ function createNewCommit(buildData) {
 			return Promise.resolve(null);
 		}
 	}))
+		.then(submoduleTreeItems => submoduleTreeItems.filter(x => x ? true : false))
 		.then(submoduleTreeItems => {
+			for (let x of submoduleTreeItems.filter(x => x.oldSubmodule ? true : false)) {
+				log.debug(`Changing submodule repo from ${x.oldSubmodule} to ${x.newSubmodule}`);
+				buildData.gitmodules = buildData.gitmodules.replace(x.oldSubmodule, x.newSubmodule);
+			}
+
 			const newTreeItems = submoduleTreeItems.map(x => x.treeItem);
 			const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
 			return buildData.github.git.blobs.create({ content: buildData.gitmodules })

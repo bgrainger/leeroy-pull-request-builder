@@ -256,7 +256,7 @@ const allPrs = existingPrs.merge(newPrs);
 
 allPrs
 	.map(mapGitHubPullRequest)
-	.subscribe(state.addPullRequest);
+	.subscribe(state.addPullRequest, e => log.error(e));
 
 const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
 const existingIssueComments = existingPrs
@@ -274,7 +274,7 @@ allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 newIssueComments.subscribe(comment => {
 	if (/rebuild this/i.test(comment.body))
 		buildPullRequest(comment.id);
-});
+}, e => log.error(e));
 
 gitHubSubjects['pull_request']
 	.filter(pr => pr.action === 'opened' || pr.action === 'synchronize')

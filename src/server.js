@@ -3,10 +3,11 @@ const buildConfig = require('./build-config.js');
 const express = require('express');
 const log = require('./logger');
 const octokat = require('octokat');
-const rx = require('rx');
-const state = require('./state');
 const pullRequest = require('./pull-request');
 const repoBranch = require('./repo-branch');
+const rx = require('rx');
+const state = require('./state');
+const superagent = require('superagent-promise')(require('superagent'), Promise);
 
 rx.config.longStackSupport = true;
 
@@ -39,7 +40,7 @@ function gitHubWebHookHandler(req, res) {
 };
 
 function jenkinsWebHookHandler(req, res) {
-	this.jenkinsSubject.onNext(req.body);
+	jenkinsSubject.onNext(req.body);
 	res.status(204).send();
 };
 
@@ -91,14 +92,18 @@ function setStatus(user, repo, sha, context, state, description, targetUrl) {
   });
 }
 
+function setBuildDataStatus(buildData, context, state, description, target_url) {
+	return github.repos(buildData.pullRequests[0].base.user, buildData.pullRequests[0].base.repo)
+		.statuses(buildData.gitHubPullRequests[0].head.sha)
+		.create({ state, description, target_url, context });
+}
+
 /**
  * Calls the GitHub Status API to set the state to "pending" using a unique context for each element
  * of `buildData.config.jobs`.
  */
 function setPendingStatus(buildData, description) {
-	return Promise.all(buildData.config.jobs.map(job => setStatus(buildData.pullRequests[0].base.user,
-		buildData.pullRequests[0].base.repo,
-		buildData.gitHubPullRequests[0].head.sha,
+	return Promise.all(buildData.config.jobs.map(job => setBuildDataStatus(buildData,
 		`Jenkins: ${job.name}`,
 		'pending',
 		description)));
@@ -173,6 +178,16 @@ function createNewCommit(buildData) {
 		});
 }
 
+let activeBuilds = new Map();
+
+function startBuilds(buildData) {
+	activeBuilds.set(buildData.newCommit.sha, buildData);	
+	return Promise.all(buildData.config.jobs.map(job => {
+		log.info(`Starting a build at ${job.url}`);
+		return superagent.get(job.url).query({ sha1: buildData.newCommit.sha });
+	}));
+}
+
 function buildPullRequest(prId) {
 	log.info(`Received build request for ${prId}.`);
 	const pr = state.getPr(prId);
@@ -208,25 +223,20 @@ function buildPullRequest(prId) {
 	// add the gitHubPullRequests properties
 	buildDatas = buildDatas.flatMap(fetchGitHubPullRequests, Object.assign);			
 
-	const updatedCommits = buildDatas
+	var subject = new rx.ReplaySubject();
+	buildDatas
 		.flatMap(buildData => setPendingStatus(buildData, 'Preparing Jenkins build'), (buildData, statuses) => buildData)
-		.flatMap(createNewCommit, Object.assign);
-
-	updatedCommits.subscribe(x => log.info(x), e => log.error(e));
-
-	return new rx.Subject();	
-	// build all including PRs, get their build configs
-	// find all affected build configs (minus previously built); for each:
-		// get head commit, tree, .gitmodules blob
-		// get all included PRs; for each:
-			// update tree sha
-			// update .gitmodules path
-		// create .gitmodules blob
-		// create new tree
-		// create new commit
-		// for each job:
-			// set pending status
-			// submit to Jenkins
+		.flatMap(createNewCommit, Object.assign)
+		.flatMap(startBuilds, (buildData, ignored) => buildData)
+		.subscribe(buildData => {
+			subject.onNext(buildData.config.id);
+		}, e => {
+			log.error(e);
+			subject.onError(e);
+		}, () => {
+			subject.onCompleted();
+		});
+	return subject;
 }
 
 // update Leeroy configs every time Build/Configuration is pushed
@@ -271,6 +281,34 @@ newIssueComments.subscribe(comment => {
 	if (/rebuild this/i.test(comment.body))
 		buildPullRequest(comment.id);
 });
+
+var jenkinsNotifications = jenkinsSubject
+	.do(job => log.debug(`Received ${job.build.phase} notification for ${job.name}`))
+	.map(job => ({ job, buildData: activeBuilds.get(job.build.parameters.sha1) }))
+	.filter(x => x.buildData)
+	.do(x => log.debug(`Corresponding build config is ${x.buildData.config.id}`))
+	.share();
+
+jenkinsNotifications
+	.filter(x => x.job.build.phase === 'STARTED')
+	.subscribe(x => {
+		setBuildDataStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
+		superagent.post(x.job.build.full_url + '/submitDescription')
+            .type('form')
+            .send({ description: x.buildData.pullRequests[0].title, Submit: 'Submit' })
+            .end();
+	}, e => log.error(e));
+
+jenkinsNotifications
+	.filter(x => x.job.build.phase === 'COMPLETED')
+	.do(x => log.info(`Job ${x.job.name} status is ${x.job.build.status}`))
+	.subscribe(x => {
+		setBuildDataStatus(x.buildData,
+			`Jenkins: ${x.job.name}`,
+			x.job.build.status === 'SUCCESS' ? 'success' : 'failure',
+			`Jenkins build status: ${x.job.build.status}`,
+			x.job.build.full_url);
+	}, e => log.error(e));
 
 let started = false;
 function startServer(port) {

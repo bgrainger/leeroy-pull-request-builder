@@ -168,8 +168,8 @@ function createNewCommit(buildData) {
 			})
 		})
 		.then(newCommit => {
-			log.info(`New commit in ${buildData.config.repo.user}/${buildData.config.repo.repo} has SHA ${newCommit.sha}`);
 			const buildBranchName = `heads/lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}`;
+			log.info(`New commit SHA is ${newCommit.sha}; moving ${buildData.config.repo.user}/${buildData.config.repo.repo}${buildBranchName}`);
 			return buildData.github.git.refs(buildBranchName).fetch()
 				.then(() => buildData.github.git.refs(buildBranchName).update({
 					sha: newCommit.sha,

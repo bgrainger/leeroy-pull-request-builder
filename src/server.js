@@ -258,7 +258,8 @@ const existingPrs = state.watchedRepos
 	.flatMap(pulls => pulls);
 // merge with new PRs that are opened while the server is running
 const newPrs = gitHubSubjects['pull_request']
-	.filter(pr => pr.action === 'opened');
+	.filter(pr => pr.action === 'opened')
+	.pluck('pull_request');
 const allPrs = existingPrs.merge(newPrs);
 
 allPrs
@@ -281,6 +282,15 @@ newIssueComments.subscribe(comment => {
 	if (/rebuild this/i.test(comment.body))
 		buildPullRequest(comment.id);
 });
+
+gitHubSubjects['pull_request']
+	.filter(pr => pr.action === 'opened' || pr.action === 'synchronize')
+	.pluck('pull_request')
+	.map(mapGitHubPullRequest)
+	.delaySubscription(1000) // feels hacky but we need state to have been updated
+	.subscribe(pr => {
+		buildPullRequest(pr.id);
+	}, e => log.error(e));
 
 var jenkinsNotifications = jenkinsSubject
 	.do(job => log.debug(`Received ${job.build.phase} notification for ${job.name}`))

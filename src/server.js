@@ -131,17 +131,21 @@ function fetchGitHubPullRequests(buildData) {
 function createNewCommit(buildData) {
 	const newTreeItems = [];
 	for (var i = 0; i < buildData.pullRequests.length; i++) {
-		var pr = buildData.pullRequests[i];
-		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
-		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
-		log.debug(`Changing submodule repo from ${oldSubmodule} to ${newSubmodule}`);
-		buildData.gitmodules = buildData.gitmodules.replace(oldSubmodule, newSubmodule);
+		const pr = buildData.pullRequests[i];
+		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
+		if (treeItem) {
+			const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
+			const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
+			log.debug(`Changing submodule repo from ${oldSubmodule} to ${newSubmodule}`);
+			buildData.gitmodules = buildData.gitmodules.replace(oldSubmodule, newSubmodule);
 
-		var treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
-		var newSubmoduleSha = buildData.gitHubPullRequests[i].head.sha;
-		log.debug(`Changing submodule SHA from ${treeItem.sha.substr(0, 8)} to ${newSubmoduleSha.substr(0, 8)}`);
-		treeItem.sha = newSubmoduleSha;
-		newTreeItems.push(treeItem);
+			var newSubmoduleSha = buildData.gitHubPullRequests[i].head.sha;
+			log.debug(`Changing submodule SHA from ${treeItem.sha.substr(0, 8)} to ${newSubmoduleSha.substr(0, 8)}`);
+			treeItem.sha = newSubmoduleSha;
+			newTreeItems.push(treeItem);
+		} else {
+			log.debug(`Submodule ${pr.base.repo} not found; skipping`);
+		}
 	}
 
 	const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];

@@ -11,9 +11,6 @@ const superagent = require('superagent-promise')(require('superagent'), Promise)
 
 rx.config.longStackSupport = true;
 
-const app = express();
-app.use(bodyParser.json());
-
 const github = new octokat({
 	token: process.env.GITHUB_TOKEN,
 	rootURL: 'https://git/api/v3'
@@ -27,6 +24,12 @@ const gitHubSubjects = {
 };
 
 const jenkinsSubject =new rx.Subject(); 
+
+const app = express();
+app.use(bodyParser.json());
+app.get('/', (req, res) => res.send('leeroy-pull-request-builder'));
+app.post('/event_handler', gitHubWebHookHandler);
+app.post('/jenkins', jenkinsWebHookHandler);
 
 function gitHubWebHookHandler(req, res) {
 	const gitHubEvent = req.headers['x-github-event'];
@@ -44,13 +47,6 @@ function jenkinsWebHookHandler(req, res) {
 	res.status(204).send();
 };
 
-app.get('/', (req, res) => res.send('leeroy-pull-request-builder'));
-app.post('/event_handler', gitHubWebHookHandler);
-app.post('/jenkins', jenkinsWebHookHandler);
-
-const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
-const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
-
 function mapGitHubPullRequest(ghpr) {
 	return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
 		repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
@@ -62,6 +58,7 @@ function getGitHubPullRequestId(ghpr) {
 	return mapGitHubPullRequest(ghpr).id;
 }
 
+const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
 function mapLeeroyConfig(name, leeroyConfig) {
 	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
@@ -266,7 +263,8 @@ const existingIssueComments = existingPrs
 	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
 const newIssueComments = gitHubSubjects['issue_comment']
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
-	
+
+const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
 	.filter(x => x.match)

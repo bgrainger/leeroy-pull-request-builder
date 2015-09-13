@@ -8,6 +8,7 @@ const repoBranch = require('./repo-branch');
 const rx = require('rx');
 const state = require('./state');
 const superagent = require('superagent-promise')(require('superagent'), Promise);
+const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;
 
@@ -29,7 +30,7 @@ let uniqueSuffix = 1;
 
 const app = express();
 app.use(bodyParser.json());
-app.get('/', (req, res) => res.send('leeroy-pull-request-builder'));
+app.get('/', (req, res) => res.send(`leeroy-pull-request-builder ${version}`));
 app.post('/event_handler', gitHubWebHookHandler);
 app.post('/jenkins', jenkinsWebHookHandler);
 
@@ -365,7 +366,7 @@ function startServer(port) {
 	if (started)
 		throw new Error('Server is already started.');
 	started = true;
-	log.info(`Starting server on port ${port}`);
+	log.info(`Starting server v${version} on port ${port}`);
 	app.listen(port);
 }
 

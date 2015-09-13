@@ -79,13 +79,15 @@ function mapLeeroyConfig(name, leeroyConfig) {
 }
 
 /**
- * Calls the GitHub Status API to set the state for the primary pull request in 'buildData'.
+ * Calls the GitHub Status API to set the state for the all pull requests in 'buildData'.
  * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
  */
 function setStatus(buildData, context, state, description, target_url) {
-	return github.repos(buildData.pullRequests[0].base.user, buildData.pullRequests[0].base.repo)
-		.statuses(buildData.gitHubPullRequests[0].head.sha)
-		.create({ state, description, target_url, context });
+	return Promise.all(buildData.pullRequests.map((pr, i) =>
+		github.repos(pr.base.user, pr.base.repo)
+			.statuses(buildData.gitHubPullRequests[i].head.sha)
+			.create({ state, description, target_url, context })
+	));
 }
 
 /**

@@ -223,10 +223,11 @@ function buildPullRequest(prId) {
 	const pr = state.getPr(prId);
 
 	// call buildPullRequest (recursively) to build all PRs that include this PR
+	log.info(`${prId} has includingPrs: ${Array.from(state.getIncludingPrs(prId))}`);
 	const builtConfigs = rx.Observable.from(state.getIncludingPrs(prId)).flatMap(prId => buildPullRequest(prId)).toSet();
 
 	// find all the configurations this PR affects
-	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x)));
+	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x.id)));
 
 	/**
 	 * buildData is an object about the build with the following properties:

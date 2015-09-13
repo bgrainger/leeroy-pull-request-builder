@@ -17,14 +17,21 @@ const github = new octokat({
 	rootURL: 'https://git/api/v3'
 })
 
-const gitHubSubjects = {
+/**
+ * An Observable sequence of GitHub event payloads (see https://developer.github.com/v3/activity/events/types/)
+ * for each of the named event types.
+ */
+const gitHubEvents = {
 	'issue_comment': new rx.Subject(),
 	'push': new rx.Subject(),
 	'pull_request': new rx.Subject(),
 	'ping': new rx.Subject()
 };
 
-const jenkinsSubject = new rx.Subject(); 
+/**
+ * An Observable sequence of Jenkins notifications (see JSON format at https://wiki.jenkins-ci.org/display/JENKINS/Notification+Plugin).
+ */
+const jenkinsEvents = new rx.Subject();
 
 let uniqueSuffix = 1;
 
@@ -36,7 +43,7 @@ app.post('/jenkins', jenkinsWebHookHandler);
 
 function gitHubWebHookHandler(req, res) {
 	const gitHubEvent = req.headers['x-github-event'];
-	const subject = gitHubSubjects[gitHubEvent];
+	const subject = gitHubEvents[gitHubEvent];
 	if (subject) {
 		subject.onNext(req.body);
 		res.status(204).send();
@@ -46,7 +53,7 @@ function gitHubWebHookHandler(req, res) {
 };
 
 function jenkinsWebHookHandler(req, res) {
-	jenkinsSubject.onNext(req.body);
+	jenkinsEvents.onNext(req.body);
 	res.status(204).send();
 };
 
@@ -274,7 +281,7 @@ function buildPullRequest(prId) {
 }
 
 // update Leeroy configs every time Build/Configuration is pushed
-gitHubSubjects['push']
+gitHubEvents['push']
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
 	.startWith(null)
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
@@ -291,7 +298,7 @@ const existingPrs = state.watchedRepos
 	.flatMap(repo => github.repos(repo).pulls.fetch())
 	.flatMap(pulls => pulls);
 // merge with new PRs that are opened while the server is running
-const newPrs = gitHubSubjects['pull_request']
+const newPrs = gitHubEvents['pull_request']
 	.filter(pr => pr.action === 'opened')
 	.pluck('pull_request');
 const allPrs = existingPrs.merge(newPrs);
@@ -303,7 +310,7 @@ allPrs
 const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
 const existingIssueComments = existingPrs
 	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
-const newIssueComments = gitHubSubjects['issue_comment']
+const newIssueComments = gitHubEvents['issue_comment']
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
@@ -318,7 +325,7 @@ newIssueComments.subscribe(comment => {
 		buildPullRequest(comment.id);
 }, e => log.error(e));
 
-gitHubSubjects['pull_request']
+gitHubEvents['pull_request']
 	.filter(pr => pr.action === 'opened' || pr.action === 'reopened' || pr.action === 'synchronize')
 	.pluck('pull_request')
 	.map(mapGitHubPullRequest)
@@ -327,7 +334,7 @@ gitHubSubjects['pull_request']
 		buildPullRequest(pr.id);
 	}, e => log.error(e));
 
-var jenkinsNotifications = jenkinsSubject
+var jenkinsNotifications = jenkinsEvents
 	.do(job => log.debug(`Received ${job.build.phase} notification for ${job.name}`))
 	.map(job => ({ job, buildData: activeBuilds.get(job.build.parameters.sha1) }))
 	.filter(x => x.buildData)

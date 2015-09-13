@@ -6,6 +6,10 @@ let logger = bunyan.createLogger({
 		{
 			stream: process.stdout,
 			level: "debug"
+		},
+		{
+			stream: process.stderr,
+			level: "error"
 		}
 	] });
 

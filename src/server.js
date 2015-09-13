@@ -57,6 +57,10 @@ function jenkinsWebHookHandler(req, res) {
 	res.status(204).send();
 };
 
+/**
+ * Creates a pullRequest object from a GitHub Pull Request JSON object (as documented
+ * here: https://developer.github.com/v3/pulls/#get-a-single-pull-request).
+ */
 function mapGitHubPullRequest(ghpr) {
 	return pullRequest.create(repoBranch.create(ghpr.base.repo.owner.login, ghpr.base.repo.name, ghpr.base.ref),
 		repoBranch.create(ghpr.head.repo.owner.login, ghpr.head.repo.name, ghpr.head.ref),
@@ -69,6 +73,11 @@ function getGitHubPullRequestId(ghpr) {
 }
 
 const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
+
+/**
+ * Creates a buildConfig object from a Leeroy config JSON object (as documented
+ * here: https://github.com/LogosBible/Leeroy#how-to-configure).
+ */
 function mapLeeroyConfig(name, leeroyConfig) {
 	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
@@ -109,6 +118,10 @@ function setPendingStatus(buildData, description) {
 		description)));
 }
 
+/**
+ * Returns a Promise for `{ headCommit, headTree, gitmodules }` containing the GitHub git commit and
+ * tree, and the contents of `.gitmodules` at the head of the build branch in the build repo.
+ */
 function fetchTreeAndGitmodules(buildData) {
 	return buildData.github.git.refs('heads', buildData.config.repo.branch).fetch()
 		.then(ref => buildData.github.git.commits(ref.object.sha).fetch())
@@ -123,15 +136,30 @@ function fetchTreeAndGitmodules(buildData) {
 			}));
 }
 
+/**
+ * Returns a Promise for `{ gitHubPullRequests: [ ghpr] }` for the GitHub Pull Request JSON object
+ * for each pull request in `buildData`.
+ */
 function fetchGitHubPullRequests(buildData) {
 	return Promise.all(buildData.pullRequests.map(pr => github.repos(pr.base.user, pr.base.repo).pulls(pr.number).fetch()))
 		.then(gitHubPullRequests => ({ gitHubPullRequests }));
 }
 
+/**
+ * Creates a new commit in the Build repo that updates all submodules affected by this pull request.
+ * Returns a Promise for `{ newCommit, buildBranchName, submoduleBranches }` where:
+ * - `newCommit` is a GitHub Git Commit JSON object for the new commit in the Build repo
+ * - `buildBranchName` is a unique branch name in the Build repo that `newCommit` is the HEAD of
+ * - `submoduleBranches` is an array of repoBranch objects for each submodule updated in the build
+ */
 function createNewCommit(buildData) {
+	// use a unique branch name so that the build server has a permanent ref that won't have been
+	// overwritten by the time the build starts
 	const buildBranchName = `lprb-${buildData.config.repo.branch}-${buildData.pullRequests[0].number}-${uniqueSuffix}`;
 	uniqueSuffix++;
+
 	return Promise.all(buildData.pullRequests.map((pr, index) => {
+		// create a merge commit for each submodule that has a PR involved in this build
 		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
 		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
@@ -183,7 +211,7 @@ function createNewCommit(buildData) {
 			const gitmodulesItem = buildData.headTree.tree.filter(x => x.path === '.gitmodules')[0];
 			return buildData.github.git.blobs.create({ content: buildData.gitmodules })
 				.then(newBlob => {
-					log.debug(`New blob SHA is ${newBlob.sha}`);
+					log.debug(`New .gitmodules blob SHA is ${newBlob.sha}`);
 					gitmodulesItem.sha = newBlob.sha;
 					newTreeItems.push(gitmodulesItem);
 					return buildData.github.git.trees.create({
@@ -211,6 +239,9 @@ function createNewCommit(buildData) {
 		});
 }
 
+/**
+ * Forcibly updates `branch` to reference `sha` in the repo controlled by the octokat `repo` object.
+ */
 function moveBranch(repo, branch, sha) {
 	const refName = `heads/${branch}`;
 	return repo.git.refs(refName).fetch()
@@ -220,6 +251,9 @@ function moveBranch(repo, branch, sha) {
 
 const activeBuilds = new Map();
 
+/**
+ * Starts builds for all jobs in `buildData`.
+ */
 function startBuilds(buildData) {
 	activeBuilds.set(buildData.newCommit.sha, buildData);	
 	return Promise.all(buildData.config.jobs.map(job => {
@@ -228,6 +262,9 @@ function startBuilds(buildData) {
 	}));
 }
 
+/**
+ * Starts all builds needed for `prId` (which should be in the form 'User/Repo/123').
+ */
 function buildPullRequest(prId) {
 	log.info(`Received build request for ${prId}.`);
 	const pr = state.getPr(prId);
@@ -247,7 +284,10 @@ function buildPullRequest(prId) {
 	 * 	headTree : a GitHub Git Tree object for that commit's tree; see https://developer.github.com/v3/git/trees/
 	 *	gitmodules : the contents of the '.gitmodules' file in the Build repo
 	 * 	pullRequests : an array of pullRequest objects that need to be included
-	 * 	gitHubPullRequests : an array of GitHub Pull Request objects one for the tip of each item in pullRequests (above); see https://developer.github.com/v3/pulls/#get-a-single-pull-request
+	 * 	gitHubPullRequests : an array of GitHub Pull Request objects, one for the tip of each item in pullRequests (above)
+	 * 	newCommit : a GitHub Git Commit object for the new commit in the Build repo
+	 * 	buildBranchName : the new branch name created in the Build repo for newCommit
+	 * 	submoduleBranches : an array of repoBranch objects for each submodule updated by the build
 	 */
 	// set the config, github and pullRequests properties 
 	let buildDatas = configsToBuild
@@ -303,16 +343,21 @@ const newPrs = gitHubEvents['pull_request']
 	.pluck('pull_request');
 const allPrs = existingPrs.merge(newPrs);
 
+// update state for each PR
 allPrs
 	.map(mapGitHubPullRequest)
 	.subscribe(state.addPullRequest, e => log.error(e));
 
+// get the comment in the body for each opened PR
 const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
+// get all comments added to existing PRs
 const existingIssueComments = existingPrs
 	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
+// get all new comments that are added while the server is running
 const newIssueComments = gitHubEvents['issue_comment']
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
+// look for "Includes ..." in all PR comments & update state
 const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
@@ -320,11 +365,13 @@ allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ parent: x.id, child: `${x.match[1]}/${x.match[2]}/${x.match[3]}` }))
 	.subscribe(x => state.addPullRequestDependency(x.parent, x.child), e => log.error(e));
 
+// look for "Rebuild this" in new comments only
 newIssueComments.subscribe(comment => {
 	if (/rebuild this/i.test(comment.body))
 		buildPullRequest(comment.id);
 }, e => log.error(e));
 
+// build all new or updated PRs
 gitHubEvents['pull_request']
 	.filter(pr => pr.action === 'opened' || pr.action === 'reopened' || pr.action === 'synchronize')
 	.pluck('pull_request')
@@ -341,6 +388,7 @@ var jenkinsNotifications = jenkinsEvents
 	.do(x => log.debug(`Corresponding build config is ${x.buildData.config.id}`))
 	.share();
 
+// set 'pending' status (with link to build) when build starts
 jenkinsNotifications
 	.filter(x => x.job.build.phase === 'STARTED')
 	.subscribe(x => {
@@ -351,6 +399,7 @@ jenkinsNotifications
 			.end();
 	}, e => log.error(e));
 
+// set 'success' or 'failure' status when build finishes
 jenkinsNotifications
 	.filter(x => x.job.build.phase === 'COMPLETED')
 	.do(x => log.info(`Job ${x.job.name} status is ${x.job.build.status}`))

@@ -38,7 +38,7 @@ let uniqueSuffix = 1;
 const app = express();
 app.use(bodyParser.json());
 app.get('/', (req, res) => res.send(`leeroy-pull-request-builder ${version}`));
-app.post('/event_handler', gitHubWebHookHandler);
+app.post('/github', gitHubWebHookHandler);
 app.post('/jenkins', jenkinsWebHookHandler);
 
 function gitHubWebHookHandler(req, res) {

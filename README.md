@@ -12,7 +12,7 @@ Add a Notification Endpoint:
 * Format: JSON
 * Protocol: HTTP
 * Event: All Events
-* URL: http://leeroy-webhook.lrscorp.net:4001/jenkins
+* URL: http://leeroy-webhook.lrscorp.net:4000/jenkins
 
 Set "This build is parameterized". Add a string parameter named `sha1` (no default value).
 
@@ -26,10 +26,10 @@ the unnecessary ones (which may be all of them).
 At https://git/Logos/YourRepoName/settings, choose "Webhooks and Services".
 
 Click "Add Webhook":
-* Payload URL: http://leeroy-webhook.lrscorp.net:4001/event_handler
+* Payload URL: http://leeroy-webhook.lrscorp.net:4000/github
 * Content type: application/json
 * Secret: (blank)
-* Let me select individual events: Pull Request
+* Let me select individual events: Pull Request, Issue Comment
 
 Click "Add webhook"
 
@@ -55,7 +55,7 @@ Edit your Leeroy config file and add:
 ### GitHub Enterprise
 
 Add a webhook to https://git/Build/Configuration that sends push events to
-http://leeroy-webhook.lrscorp.net:4001/event_handler.
+http://leeroy-webhook.lrscorp.net:4000/github.
 
 In GitHub Enterprise, create an API token for the user who will update the PR status:
 https://git/settings/tokens/new

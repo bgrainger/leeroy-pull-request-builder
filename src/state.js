@@ -71,7 +71,7 @@ function getPr(prId) {
 }
 
 function getPrBuilds(pr) {
-	return submoduleBuilds[pr.base.id];
+	return submoduleBuilds[pr.base.id] || [];
 }
 
 exports.addBuildConfig = addBuildConfig;

@@ -1,6 +1,8 @@
+'use strict';
+
 const bunyan = require('bunyan');
 
-let logger = bunyan.createLogger({
+const logger = bunyan.createLogger({
 	name: 'LPRB',
 	streams: [
 		{

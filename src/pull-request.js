@@ -1,3 +1,5 @@
+'use strict';
+
 const prototype = { 
 
 };
@@ -8,7 +10,7 @@ function create(base, head, number, title) {
 		head: { value: head },
 		number: { value: number },
 		title: { value: title },
-		id: { get: function() { return `${this.base.user}/${this.base.repo}/${this.number}`; } }
+		id: { get() { return `${this.base.user}/${this.base.repo}/${this.number}`; } }
 	});
 }
 

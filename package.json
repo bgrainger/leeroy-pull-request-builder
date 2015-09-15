@@ -1,6 +1,6 @@
 {
   "name": "leeroy-pull-request-builder",
-  "version": "0.7.0-alpha.1",
+  "version": "0.7.0-alpha.2",
   "description": "Builds pull requests for Leeroy-based builds.",
   "main": "src/main.js",
   "scripts": {
@@ -32,8 +32,10 @@
   },
   "devDependencies": {
     "babel-runtime": "^5.8.24",
+    "eslint": "^1.4.1",
     "gulp": "^3.9.0",
     "gulp-babel": "^5.2.1",
+    "gulp-eslint": "^1.0.0",
     "gulp-sourcemaps": "^1.5.2"
   }
 }

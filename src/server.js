@@ -1,3 +1,5 @@
+'use strict';
+
 const bodyParser = require('body-parser');
 const buildConfig = require('./build-config.js');
 const express = require('express');
@@ -50,12 +52,12 @@ function gitHubWebHookHandler(req, res) {
 	} else {
 		res.status(400).send();
 	}
-};
+}
 
 function jenkinsWebHookHandler(req, res) {
 	jenkinsEvents.onNext(req.body);
 	res.status(204).send();
-};
+}
 
 /**
  * Creates a pullRequest object from a GitHub Pull Request JSON object (as documented
@@ -79,18 +81,18 @@ const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
  * here: https://github.com/LogosBible/Leeroy#how-to-configure).
  */
 function mapLeeroyConfig(name, leeroyConfig) {
-	let [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
+	const [, user, repo] = buildRepoUrl.exec(leeroyConfig.repoUrl) || [];
 	return buildConfig.create(
 		name,
 		repoBranch.create(user, repo, leeroyConfig.branch || 'master'),
-		leeroyConfig.pullRequestBuildUrls.map(function (buildUrl) {
+		leeroyConfig.pullRequestBuildUrls.map(buildUrl => {
 			var match = /\/job\/([^/]+)\/buildWithParameters/.exec(buildUrl);
 			return {
 				name: match && match[1],
 				url: buildUrl
 			};
 		})
-			.filter(job => job.name ? true : false),
+			.filter(job => job.name),
 		leeroyConfig.submodules
 	);
 }
@@ -99,11 +101,11 @@ function mapLeeroyConfig(name, leeroyConfig) {
  * Calls the GitHub Status API to set the state for the all pull requests in 'buildData'.
  * See https://developer.github.com/v3/repos/statuses/#create-a-status for parameter descriptions.
  */
-function setStatus(buildData, context, state, description, target_url) {
+function setStatus(buildData, context, statusState, description, target_url) {
 	return Promise.all(buildData.pullRequests.map((pr, i) =>
 		github.repos(pr.base.user, pr.base.repo)
 			.statuses(buildData.gitHubPullRequests[i].head.sha)
-			.create({ state, description, target_url, context })
+			.create({ state: statusState, description, target_url, context })
 	));
 }
 
@@ -162,14 +164,14 @@ function createNewCommit(buildData) {
 		// create a merge commit for each submodule that has a PR involved in this build
 		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
 		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
-		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path == pr.base.repo)[0];
+		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path === pr.base.repo)[0];
 		if (treeItem) {
 			const githubBase = github.repos(pr.base.user, pr.base.repo);
 			const prHeadSha = buildData.gitHubPullRequests[index].head.sha;		
 			return githubBase.git.refs('heads', pr.base.branch).fetch()
 				.then(ref => ref.object.sha)
 				.then(headSha => moveBranch(githubBase, buildBranchName, headSha)
-					.then(ref => {
+					.then(() => {
 						log.info(`Merging ${prHeadSha.substr(0, 8)} into ${buildBranchName} in ${pr.base.user}/${pr.base.repo}`);
 						return githubBase.merges.create({
 							base: buildBranchName,
@@ -200,11 +202,11 @@ function createNewCommit(buildData) {
 			return Promise.resolve(null);
 		}
 	}))
-		.then(submoduleTreeItems => submoduleTreeItems.filter(x => x ? true : false))
+		.then(submoduleTreeItems => submoduleTreeItems.filter(x => x))
 		.then(submoduleTreeItems => {
-			for (let x of submoduleTreeItems.filter(x => x.oldSubmodule ? true : false)) {
-				log.debug(`Changing submodule repo from ${x.oldSubmodule} to ${x.newSubmodule}`);
-				buildData.gitmodules = buildData.gitmodules.replace(x.oldSubmodule, x.newSubmodule);
+			for (const submoduleTreeItem of submoduleTreeItems.filter(x => x.oldSubmodule)) {
+				log.debug(`Changing submodule repo from ${submoduleTreeItem.oldSubmodule} to ${submoduleTreeItem.newSubmodule}`);
+				buildData.gitmodules = buildData.gitmodules.replace(submoduleTreeItem.oldSubmodule, submoduleTreeItem.newSubmodule);
 			}
 
 			const newTreeItems = submoduleTreeItems.map(x => x.treeItem);
@@ -216,7 +218,7 @@ function createNewCommit(buildData) {
 					newTreeItems.push(gitmodulesItem);
 					return buildData.github.git.trees.create({
 						base_tree: buildData.headTree.sha,
-						tree: newTreeItems.filter(x => x ? true : false)
+						tree: newTreeItems.filter(x => x)
 					})
 				})
 				.then(newTree => {
@@ -230,7 +232,7 @@ function createNewCommit(buildData) {
 				.then(newCommit => {
 					log.info(`New commit SHA is ${newCommit.sha}; moving ${buildData.config.repo.user}/${buildData.config.repo.repo}/${buildBranchName}`);
 					return moveBranch(buildData.github, buildBranchName, newCommit.sha)
-						.then(newRef => ({
+						.then(() => ({
 							newCommit,
 							buildBranchName,
 							submoduleBranches: submoduleTreeItems.map(x => repoBranch.create(x.user, x.repo, buildBranchName))
@@ -271,7 +273,7 @@ function buildPullRequest(prId) {
 
 	// call buildPullRequest (recursively) to build all PRs that include this PR
 	log.info(`${prId} has includingPrs: ${Array.from(state.getIncludingPrs(prId))}`);
-	const builtConfigs = rx.Observable.from(state.getIncludingPrs(prId)).flatMap(prId => buildPullRequest(prId)).toSet();
+	const builtConfigs = rx.Observable.from(state.getIncludingPrs(prId)).flatMap(x => buildPullRequest(x)).toSet();
 
 	// find all the configurations this PR affects
 	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x.id)));
@@ -306,9 +308,9 @@ function buildPullRequest(prId) {
 
 	var subject = new rx.ReplaySubject();
 	buildDatas
-		.flatMap(buildData => setPendingStatus(buildData, 'Preparing Jenkins build'), (buildData, statuses) => buildData)
+		.flatMap(buildData => setPendingStatus(buildData, 'Preparing Jenkins build'), buildData => buildData)
 		.flatMap(createNewCommit, Object.assign)
-		.flatMap(startBuilds, (buildData, ignored) => buildData)
+		.flatMap(startBuilds, buildData => buildData)
 		.subscribe(buildData => {
 			subject.onNext(buildData.config.id);
 		}, e => {
@@ -321,7 +323,7 @@ function buildPullRequest(prId) {
 }
 
 // update Leeroy configs every time Build/Configuration is pushed
-gitHubEvents['push']
+gitHubEvents.push
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
 	.startWith(null)
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
@@ -338,7 +340,7 @@ const existingPrs = state.watchedRepos
 	.flatMap(repo => github.repos(repo).pulls.fetch())
 	.flatMap(pulls => pulls);
 // merge with new PRs that are opened while the server is running
-const newPrs = gitHubEvents['pull_request']
+const newPrs = gitHubEvents.pull_request
 	.filter(pr => pr.action === 'opened')
 	.pluck('pull_request');
 const allPrs = existingPrs.merge(newPrs);
@@ -354,7 +356,7 @@ const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.bo
 const existingIssueComments = existingPrs
 	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
 // get all new comments that are added while the server is running
-const newIssueComments = gitHubEvents['issue_comment']
+const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state
@@ -372,7 +374,7 @@ newIssueComments.subscribe(comment => {
 }, e => log.error(e));
 
 // build all new or updated PRs
-gitHubEvents['pull_request']
+gitHubEvents.pull_request
 	.filter(pr => pr.action === 'opened' || pr.action === 'reopened' || pr.action === 'synchronize')
 	.pluck('pull_request')
 	.map(mapGitHubPullRequest)
@@ -393,7 +395,7 @@ jenkinsNotifications
 	.filter(x => x.job.build.phase === 'STARTED')
 	.subscribe(x => {
 		setStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
-		superagent.post(x.job.build.full_url + '/submitDescription')
+		superagent.post(`${x.job.build.full_url}/submitDescription`)
 			.type('form')
 			.send({ description: x.buildData.pullRequests[0].title, Submit: 'Submit' })
 			.end();
@@ -411,7 +413,7 @@ jenkinsNotifications
 			x.job.build.full_url);
 		x.buildData.github.git.refs(`heads/${x.buildData.buildBranchName}`).remove()
 			.then(success => log.debug(`Branch ${x.buildData.config.repo.user}/${x.buildData.config.repo.repo}/${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
-		for (let sb of x.buildData.submoduleBranches) {
+		for (const sb of x.buildData.submoduleBranches) {
 			github.repos(sb.user, sb.repo).git.refs(`heads/${sb.branch}`).remove()
 				.then(success => log.debug(`Branch ${sb.user}/${sb.repo}/${sb.branch} was ${success ? '' : 'not '}deleted`));
 		}

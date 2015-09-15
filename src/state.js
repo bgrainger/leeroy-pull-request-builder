@@ -1,6 +1,6 @@
+'use strict';
+
 const log = require('./logger');
-const pullRequest = require('./pull-request');
-const repoBranch = require('./repo-branch');
 const rx = require('rx');
 
 const allBuilds = [ ];
@@ -16,7 +16,7 @@ function addBuildConfig(buildConfig) {
 	
 	allBuilds.push(buildConfig);
 	
-	for (let submodule in buildConfig.submodules) {
+	for (const submodule in buildConfig.submodules) {
 		const id = `${submodule}/${buildConfig.submodules[submodule]}`;
 		submoduleBuilds[id] = submoduleBuilds[id] || [];
 		submoduleBuilds[id].push(buildConfig);
@@ -25,7 +25,7 @@ function addBuildConfig(buildConfig) {
 			submoduleRepos.add(submodule);
 			watchedRepos.onNext(submodule);
 		}
-    }
+	}
 }
 
 function addPullRequest(pr) {
@@ -43,7 +43,7 @@ function addPullRequestDependency(parent, child) {
 	prIncludes[parent].push(child);
 	prIncluded[child] = prIncluded[child] || [];
 	prIncluded[child].push(parent);
-};
+}
 
 function walkGraph(edges, id) {
 	const results = new Set();
@@ -61,7 +61,7 @@ function getIncludedPrs(prId) {
 }
 
 function getIncludingPrs(prId) {
-	const including =  walkGraph(prIncluded, prId);
+	const including = walkGraph(prIncluded, prId);
 	including.delete(prId);
 	return including.values();
 }

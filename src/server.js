@@ -17,7 +17,7 @@ rx.config.longStackSupport = true;
 const github = new octokat({
 	token: process.env.GITHUB_TOKEN,
 	rootURL: 'https://git/api/v3'
-})
+});
 
 /**
  * An Observable sequence of GitHub event payloads (see https://developer.github.com/v3/activity/events/types/)
@@ -219,7 +219,7 @@ function createNewCommit(buildData) {
 					return buildData.github.git.trees.create({
 						base_tree: buildData.headTree.sha,
 						tree: newTreeItems.filter(x => x)
-					})
+					});
 				})
 				.then(newTree => {
 					log.debug(`New tree SHA is ${newTree.sha}`);
@@ -227,7 +227,7 @@ function createNewCommit(buildData) {
 						message: buildData.pullRequests[0].title,
 						tree: newTree.sha,
 						parents: [ buildData.headCommit.sha ]
-					})
+					});
 				})
 				.then(newCommit => {
 					log.info(`New commit SHA is ${newCommit.sha}; moving ${buildData.config.repo.user}/${buildData.config.repo.repo}/${buildBranchName}`);

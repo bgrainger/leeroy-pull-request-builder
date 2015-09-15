@@ -1,11 +1,7 @@
 'use strict';
 
-const prototype = {
-	
-};
-
 function create(user, repo, branch) {
-	return Object.create(prototype, {
+	return Object.create({}, {
 		user: { value: user },
 		repo: { value: repo },
 		branch: { value: branch },

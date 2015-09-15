@@ -1,11 +1,7 @@
 'use strict';
 
-const prototype = { 
-
-};
-
 function create(base, head, number, title) {
-	return Object.create(prototype, {
+	return Object.create({}, {
 		base: { value: base },
 		head: { value: head },
 		number: { value: number },

@@ -14,10 +14,7 @@ const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;
 
-const github = new octokat({
-	token: process.env.GITHUB_TOKEN,
-	rootURL: 'https://git/api/v3'
-});
+let github;
 
 /**
  * An Observable sequence of GitHub event payloads (see https://developer.github.com/v3/activity/events/types/)
@@ -323,7 +320,7 @@ function buildPullRequest(prId) {
 }
 
 // update Leeroy configs every time Build/Configuration is pushed
-gitHubEvents.push
+const pushedLeeroyConfigs = gitHubEvents.push
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
 	.startWith(null)
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
@@ -332,8 +329,7 @@ gitHubEvents.push
 	.flatMap(file => github.repos('Build', 'Configuration').contents(file.path).read().then(contents => ({ path: file.path, contents })))
 	.map(x => { try { return { path: x.path, config: JSON.parse(x.contents) }; } catch(e) { return null; } })
 	.filter(x => x && !x.config.disabled && x.config.submodules && x.config.pullRequestBuildUrls && buildRepoUrl.test(x.config.repoUrl))
-	.map(x => mapLeeroyConfig(x.path.substr(0, x.path.length - 5), x.config))
-	.subscribe(state.addBuildConfig, e => log.error(e));
+	.map(x => mapLeeroyConfig(x.path.substr(0, x.path.length - 5), x.config));
 
 // get all existing open PRs when new repos are watched
 const existingPrs = state.watchedRepos
@@ -420,11 +416,25 @@ jenkinsNotifications
 	}, e => log.error(e));
 
 let started = false;
-function startServer(port) {
+function startServer(port, gitHubUrl, gitHubToken) {
+	if (!port)
+		throw new Error('port must be specified');
+	if (!gitHubUrl)
+		throw new Error('gitHubUrl must be specified');
+	if (!gitHubToken)
+		throw new Error('gitHubToken must be specified');
 	if (started)
-		throw new Error('Server is already started.');
+		throw new Error('Server is already started');
 	started = true;
 	log.info(`Starting server v${version} on port ${port}`);
+
+	github = new octokat({
+		token: gitHubToken,
+		rootURL: gitHubUrl
+	});
+
+	pushedLeeroyConfigs.subscribe(state.addBuildConfig, e => log.error(e));
+
 	app.listen(port);
 }
 

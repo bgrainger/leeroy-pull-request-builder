@@ -254,10 +254,12 @@ const activeBuilds = new Map();
  * Starts builds for all jobs in `buildData`.
  */
 function startBuilds(buildData) {
-	activeBuilds.set(buildData.newCommit.sha, buildData);	
+	activeBuilds.set(buildData.newCommit.sha, buildData);
+	buildData.jobCount = buildData.config.jobs.length;
 	return Promise.all(buildData.config.jobs.map(job => {
 		log.info(`Starting a build at ${job.url}`);
-		return superagent.get(job.url).query({ sha1: buildData.newCommit.sha });
+		return superagent.get(job.url).query({ sha1: buildData.newCommit.sha })
+			.then(null, () => { buildData.jobCount--; });
 	}));
 }
 
@@ -407,11 +409,14 @@ jenkinsNotifications
 			x.job.build.status === 'SUCCESS' ? 'success' : 'failure',
 			`Jenkins build status: ${x.job.build.status}`,
 			x.job.build.full_url);
-		x.buildData.github.git.refs(`heads/${x.buildData.buildBranchName}`).remove()
-			.then(success => log.debug(`Branch ${x.buildData.config.repo.user}/${x.buildData.config.repo.repo}/${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
-		for (const sb of x.buildData.submoduleBranches) {
-			github.repos(sb.user, sb.repo).git.refs(`heads/${sb.branch}`).remove()
-				.then(success => log.debug(`Branch ${sb.user}/${sb.repo}/${sb.branch} was ${success ? '' : 'not '}deleted`));
+		x.buildData.jobCount--;
+		if (x.buildData.jobCount === 0) {
+			x.buildData.github.git.refs(`heads/${x.buildData.buildBranchName}`).remove()
+				.then(success => log.debug(`Branch ${x.buildData.config.repo.user}/${x.buildData.config.repo.repo}/${x.buildData.buildBranchName} was ${success ? '' : 'not '}deleted`));
+			for (const sb of x.buildData.submoduleBranches) {
+				github.repos(sb.user, sb.repo).git.refs(`heads/${sb.branch}`).remove()
+					.then(success => log.debug(`Branch ${sb.user}/${sb.repo}/${sb.branch} was ${success ? '' : 'not '}deleted`));
+			}
 		}
 	}, e => log.error(e));
 

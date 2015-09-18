@@ -1,6 +1,6 @@
 {
   "name": "leeroy-pull-request-builder",
-  "version": "0.7.0-alpha.4",
+  "version": "0.7.0-alpha.5",
   "description": "Builds pull requests for Leeroy-based builds.",
   "main": "src/main.js",
   "scripts": {

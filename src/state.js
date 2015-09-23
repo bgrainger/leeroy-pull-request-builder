@@ -1,5 +1,5 @@
 import log from './logger';
-const rx = require('rx');
+import rx from 'rx';
 
 const allBuilds = [ ];
 const allPrs = { };

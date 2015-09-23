@@ -1,13 +1,15 @@
-const bodyParser = require('body-parser');
+import bodyParser from 'body-parser';
 import * as buildConfig from './build-config.js';
-const express = require('express');
+import express from 'express';
 import log from './logger';
-const octokat = require('octokat');
+import octokat from 'octokat';
 import * as pullRequest from './pull-request';
 import * as repoBranch from './repo-branch';
-const rx = require('rx');
+import rx from 'rx';
 import * as state from './state';
-const superagent = require('superagent-promise')(require('superagent'), Promise);
+import superagent_base from 'superagent';
+import superagent_promise from 'superagent-promise';
+const superagent = superagent_promise(superagent_base, Promise);
 const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;

@@ -1,6 +1,4 @@
-'use strict';
-
-function create(user, repo, branch) {
+export function create(user, repo, branch) {
 	return Object.create({}, {
 		user: { value: user },
 		repo: { value: repo },
@@ -8,5 +6,3 @@ function create(user, repo, branch) {
 		id: { get() { return `${this.user}/${this.repo}/${this.branch}`; } }
 	});
 }
-
-exports.create = create;

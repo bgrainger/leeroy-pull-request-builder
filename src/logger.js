@@ -1,8 +1,6 @@
-'use strict';
-
 const bunyan = require('bunyan');
 
-const logger = bunyan.createLogger({
+export default bunyan.createLogger({
 	name: 'LPRB',
 	streams: [
 		{
@@ -14,5 +12,3 @@ const logger = bunyan.createLogger({
 			level: "error"
 		}
 	] });
-
-module.exports = logger;

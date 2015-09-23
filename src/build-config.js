@@ -1,6 +1,4 @@
-'use strict';
-
-function create(id, repo, jobs, submodules) {
+export function create(id, repo, jobs, submodules) {
 	return Object.create({}, {
 		id: { value: id },
 		repo: { value: repo },
@@ -8,5 +6,3 @@ function create(id, repo, jobs, submodules) {
 		submodules: { value: submodules }
 	});
 }
-
-exports.create = create;

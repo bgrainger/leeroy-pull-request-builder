@@ -1,6 +1,4 @@
-'use strict';
-
-const log = require('./logger');
+import log from './logger';
 const rx = require('rx');
 
 const allBuilds = [ ];
@@ -9,9 +7,9 @@ const prIncludes = { };
 const prIncluded = { };
 const submoduleRepos = new Set();
 const submoduleBuilds = { };
-const watchedRepos = new rx.Subject();
+export const watchedRepos = new rx.Subject();
 
-function addBuildConfig(buildConfig) {
+export function addBuildConfig(buildConfig) {
 	log.debug(`Adding Leeroy config ${buildConfig.id} for ${buildConfig.repo.id}`);
 	
 	allBuilds.push(buildConfig);
@@ -28,7 +26,7 @@ function addBuildConfig(buildConfig) {
 	}
 }
 
-function addPullRequest(pr) {
+export function addPullRequest(pr) {
 	if (!allPrs[pr.id])
 		allPrs[pr.id] = pr;
 	else
@@ -37,7 +35,7 @@ function addPullRequest(pr) {
 	return pr;
 }
 
-function addPullRequestDependency(parent, child) {
+export function addPullRequestDependency(parent, child) {
 	log.info(`Adding link from ${parent} to ${child}`);
 	prIncludes[parent] = prIncludes[parent] || [];
 	prIncludes[parent].push(child);
@@ -56,29 +54,20 @@ function walkGraph(edges, id) {
 	return results;
 }
 
-function getIncludedPrs(prId) {
+export function getIncludedPrs(prId) {
 	return walkGraph(prIncludes, prId).values();
 }
 
-function getIncludingPrs(prId) {
+export function getIncludingPrs(prId) {
 	const including = walkGraph(prIncluded, prId);
 	including.delete(prId);
 	return including.values();
 }
 
-function getPr(prId) {
+export function getPr(prId) {
 	return allPrs[prId];
 }
 
-function getPrBuilds(pr) {
+export function getPrBuilds(pr) {
 	return submoduleBuilds[pr.base.id] || [];
 }
-
-exports.addBuildConfig = addBuildConfig;
-exports.addPullRequest = addPullRequest;
-exports.addPullRequestDependency = addPullRequestDependency;
-exports.getIncludedPrs = getIncludedPrs;
-exports.getIncludingPrs = getIncludingPrs;
-exports.getPr = getPr;
-exports.getPrBuilds = getPrBuilds;
-exports.watchedRepos = watchedRepos;

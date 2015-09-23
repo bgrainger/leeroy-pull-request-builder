@@ -1,6 +1,4 @@
-'use strict';
-
-function create(base, head, number, title) {
+export function create(base, head, number, title) {
 	return Object.create({}, {
 		base: { value: base },
 		head: { value: head },
@@ -9,5 +7,3 @@ function create(base, head, number, title) {
 		id: { get() { return `${this.base.user}/${this.base.repo}/${this.number}`; } }
 	});
 }
-
-exports.create = create;

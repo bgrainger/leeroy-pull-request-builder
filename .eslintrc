@@ -4,6 +4,7 @@
 		"blockBindings": true,
 		"destructuring": true,
 		"forOf": true,
+		"modules": true,
 		"objectLiteralShorthandMethods": true,
 		"objectLiteralShorthandProperties": true,
 		"spread": true,

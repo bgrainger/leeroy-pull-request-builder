@@ -1,14 +1,12 @@
-'use strict';
-
 const bodyParser = require('body-parser');
-const buildConfig = require('./build-config.js');
+import * as buildConfig from './build-config.js';
 const express = require('express');
-const log = require('./logger');
+import log from './logger';
 const octokat = require('octokat');
-const pullRequest = require('./pull-request');
-const repoBranch = require('./repo-branch');
+import * as pullRequest from './pull-request';
+import * as repoBranch from './repo-branch';
 const rx = require('rx');
-const state = require('./state');
+import * as state from './state';
 const superagent = require('superagent-promise')(require('superagent'), Promise);
 const version = require('../package.json').version;
 
@@ -421,7 +419,7 @@ jenkinsNotifications
 	}, e => log.error(e));
 
 let started = false;
-function startServer(port, gitHubUrl, gitHubToken) {
+export function start(port, gitHubUrl, gitHubToken) {
 	if (!port)
 		throw new Error('port must be specified');
 	if (!gitHubUrl)
@@ -442,5 +440,3 @@ function startServer(port, gitHubUrl, gitHubToken) {
 
 	app.listen(port);
 }
-
-exports.start = startServer;

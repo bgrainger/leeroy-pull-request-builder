@@ -1,0 +1,4 @@
+[bugtraq "github"]
+  url = "https://github.com/bgrainger/leeroy-pull-request-builder/issues/%BUGID%"
+  loglinkregex = "#?\\d+"
+  logRegex = "#(\\d+)"

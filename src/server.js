@@ -358,11 +358,11 @@ const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state
-const includePr = /Include https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+const includePr = /(\bInclude\b|\bDepends on\b) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
 	.filter(x => x.match)
-	.map(x => ({ parent: x.id, child: `${x.match[1]}/${x.match[2]}/${x.match[3]}` }))
+	.map(x => ({ parent: x.id, child: `${x.match[2]}/${x.match[3]}/${x.match[4]}` }))
 	.subscribe(x => state.addPullRequestDependency(x.parent, x.child), e => log.error(e));
 
 // look for "Rebuild this" in new comments only

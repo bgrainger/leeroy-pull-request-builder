@@ -358,7 +358,7 @@ const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state
-const includePr = /(\bInclude\b|\bDepends on\b) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+const includePr = /\b(Includes?|Depends on) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
 	.filter(x => x.match)

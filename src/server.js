@@ -266,13 +266,21 @@ function startBuilds(buildData) {
 /**
  * Starts all builds needed for `prId` (which should be in the form 'User/Repo/123').
  */
-function buildPullRequest(prId) {
+function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 	log.info(`Received build request for ${prId}.`);
 	const pr = state.getPr(prId);
 
 	// call buildPullRequest (recursively) to build all PRs that include this PR
-	log.info(`${prId} has includingPrs: ${Array.from(state.getIncludingPrs(prId))}`);
-	const builtConfigs = rx.Observable.from(state.getIncludingPrs(prId)).flatMap(x => buildPullRequest(x)).toSet();
+	const prIdsToBuild = [ ];
+	const allPrsBeingBuilt = new Set(prsBeingBuilt);
+	for (const includingPrId of state.getIncludingPrs(prId)) {
+		if (!prsBeingBuilt.has(includingPrId)) {
+			prIdsToBuild.push(includingPrId);
+			allPrsBeingBuilt.add(includingPrId);
+		}
+	}
+	log.info(`${prId} has includingPrs: ${prIdsToBuild}`);
+	const builtConfigs = rx.Observable.from(prIdsToBuild).flatMap(x => buildPullRequest(x, allPrsBeingBuilt)).toSet();
 
 	// find all the configurations this PR affects
 	const configsToBuild = builtConfigs.flatMap(previouslyBuilt => state.getPrBuilds(pr).filter(x => !previouslyBuilt.has(x.id)));

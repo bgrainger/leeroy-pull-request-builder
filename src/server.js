@@ -258,7 +258,7 @@ function startBuilds(buildData) {
 	buildData.jobCount = buildData.config.jobs.length;
 	return Promise.all(buildData.config.jobs.map(job => {
 		log.info(`Starting a build at ${job.url}`);
-		return superagent.get(job.url).query({ sha1: buildData.newCommit.sha })
+		return superagent.post(job.url).query({ sha1: buildData.newCommit.sha })
 			.then(null, () => { buildData.jobCount--; });
 	}));
 }

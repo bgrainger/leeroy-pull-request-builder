@@ -31,7 +31,7 @@ export function addPullRequest(pr) {
 		allPrs[pr.id] = pr;
 	else
 		pr = allPrs[pr.id];
-	log.debug(`Added ${pr.id}.`);
+	log.debug(`Added ${pr.id}: ${pr.base} -> ${pr.head}.`);
 	return pr;
 }
 

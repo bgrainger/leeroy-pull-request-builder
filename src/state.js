@@ -1,7 +1,6 @@
 import log from './logger';
 import rx from 'rx';
 
-const allBuilds = [ ];
 const allPrs = { };
 const prIncludes = { };
 const prIncluded = { };
@@ -11,9 +10,15 @@ export const watchedRepos = new rx.Subject();
 
 export function addBuildConfig(buildConfig) {
 	log.debug(`Adding Leeroy config ${buildConfig.id} for ${buildConfig.repo.id}`);
-	
-	allBuilds.push(buildConfig);
-	
+
+	for (const id in submoduleBuilds) {
+		const newBuilds = submoduleBuilds[id].filter(x => x.id !== buildConfig.id);
+		if (newBuilds.length !== submoduleBuilds[id].length) {
+			log.debug(`Removing ${buildConfig.id} from submoduleBuilds[${id}]`);
+		}
+		submoduleBuilds[id] = newBuilds;
+	}
+
 	for (const submodule in buildConfig.submodules) {
 		const id = `${submodule}/${buildConfig.submodules[submodule]}`;
 		submoduleBuilds[id] = submoduleBuilds[id] || [];

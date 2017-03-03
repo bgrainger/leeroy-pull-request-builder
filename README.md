@@ -14,8 +14,8 @@ To force a PR to be reintegrated, enter the text `rebuild this` as a comment on 
 
 ### Build two PRs at once
 
-If PR #123 in RepoA requires PR #456 in RepoB to build successfully, go to https://git/Org/RepoA/pull/123
-and add a comment with the text `Include https://git/Org/RepoB/pull/456`. (You can include this text in
+If PR #123 in OrgA/RepoA requires PR #456 in OrgB/RepoB to build successfully, go to https://git/OrgA/RepoA/pull/123
+and add a comment with the text `Requires OrgB/RepoB#456`. (You can include this text in
 the description when you open a PR, or you can add it as a PR comment afterwards; however, you can't edit
 the description of an existing PR to add this comment, because GitHub doesn't raise a notification for that
 edit.)

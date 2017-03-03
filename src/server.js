@@ -130,7 +130,7 @@ function fetchTreeAndGitmodules(buildData) {
 				return buildData.github.git.blobs(gitmodulesItem.sha).fetch()
 					.then(blob => {
 						const gitmodules = new Buffer(blob.content, 'base64').toString('utf-8');
-						return { headCommit, headTree, gitmodules };					
+						return { headCommit, headTree, gitmodules };
 					});
 			}));
 }
@@ -164,7 +164,7 @@ function createNewCommit(buildData) {
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path === pr.base.repo)[0];
 		if (treeItem) {
 			const githubBase = github.repos(pr.base.user, pr.base.repo);
-			const prHeadSha = buildData.gitHubPullRequests[index].head.sha;		
+			const prHeadSha = buildData.gitHubPullRequests[index].head.sha;
 			return githubBase.git.refs('heads', pr.base.branch).fetch()
 				.then(ref => ref.object.sha)
 				.then(headSha => moveBranch(githubBase, buildBranchName, headSha)
@@ -298,7 +298,7 @@ function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 	 * 	buildBranchName : the new branch name created in the Build repo for newCommit
 	 * 	submoduleBranches : an array of repoBranch objects for each submodule updated by the build
 	 */
-	// set the config, github and pullRequests properties 
+	// set the config, github and pullRequests properties
 	let buildDatas = configsToBuild
 		.do(config => log.info(`Will build ${config.id}`))
 		.map(config => ({
@@ -311,7 +311,7 @@ function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 	buildDatas = buildDatas.flatMap(fetchTreeAndGitmodules, Object.assign);
 
 	// add the gitHubPullRequests properties
-	buildDatas = buildDatas.flatMap(fetchGitHubPullRequests, Object.assign);			
+	buildDatas = buildDatas.flatMap(fetchGitHubPullRequests, Object.assign);
 
 	var subject = new rx.ReplaySubject();
 	buildDatas
@@ -366,9 +366,10 @@ const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state
-const includePr = /\b(Includes?|Depends on) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+const includePr1 = /\b(Includes?|Depends on|Requires?) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+const includePr2 = /\b(Includes?|Depends on|Requires?) (\w+)\/(\w+)#(\d+)\b/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
-	.map(x => ({ id: x.id, match: includePr.exec(x.body) }))
+	.map(x => ({ id: x.id, match: includePr1.exec(x.body) || includePr2.exec(x.body) }))
 	.filter(x => x.match)
 	.map(x => ({ parent: x.id, child: `${x.match[2]}/${x.match[3]}/${x.match[4]}` }))
 	.subscribe(x => state.addPullRequestDependency(x.parent, x.child), e => log.error(e));

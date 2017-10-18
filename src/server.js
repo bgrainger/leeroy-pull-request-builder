@@ -10,6 +10,7 @@ import * as state from './state';
 import superagent_base from 'superagent';
 import superagent_promise from 'superagent-promise';
 const superagent = superagent_promise(superagent_base, Promise);
+const url = require('url');
 const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;
@@ -257,9 +258,39 @@ function startBuilds(buildData) {
 	activeBuilds.set(buildData.newCommit.sha, buildData);
 	buildData.jobCount = buildData.config.jobs.length;
 	return Promise.all(buildData.config.jobs.map(job => {
-		log.info(`Starting a build at ${job.url}`);
-		return superagent.post(job.url).query({ sha1: buildData.newCommit.sha })
-			.then(null, () => { buildData.jobCount--; });
+		// Jenkins now requires a CSRF "crumb" to be sent in the HTTP headers; there is a separate API that issues them
+		let getCrumb = Promise.resolve(null);
+		if (job.url.match(/jenkins/)) {
+			// TODO: decide if it's worth caching these for some time instead of requesting them for every single build
+			var getCrumbUrl = url.resolve(job.url, '/crumbIssuer/api/json');
+			log.info(`Getting crumb from ${getCrumbUrl}`);
+			getCrumb = superagent.get(getCrumbUrl).then(x => {
+				if (x && x.body && x.body.crumb) {
+					log.debug(`Got crumb: ${x.body.crumb}`);
+					return [ x.body.crumbRequestField, x.body.crumb ];
+				} else {
+					log.warn(`Unexpected crumb response: ${JSON.stringify(x)}`);
+					return null;
+				}
+			}, err => {
+				log.warn(`Getting crumb failed: ${err}`);
+				return null;
+			});
+		}
+
+		return getCrumb.then(crumb => {
+			log.info(`Starting a build at ${job.url}`);
+			var request = superagent
+				.post(job.url)
+				.query({ sha1: buildData.newCommit.sha });
+			if (crumb) {
+				request = request.set(crumb[0], crumb[1]);
+			}
+			return request.then(null, err => {
+				log.warn(`Build didn't start: ${err}`);
+				buildData.jobCount--;
+			});
+		});
 	}));
 }
 

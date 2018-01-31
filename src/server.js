@@ -72,7 +72,7 @@ function getGitHubPullRequestId(ghpr) {
 	return mapGitHubPullRequest(ghpr).id;
 }
 
-const buildRepoUrl = /^git@git:([^/]+)\/([^.]+).git$/;
+const buildRepoUrl = /^git@git:([^/]+)\/(.+?)\.git$/;
 
 /**
  * Creates a buildConfig object from a Leeroy config JSON object (as documented

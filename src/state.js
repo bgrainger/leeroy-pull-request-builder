@@ -53,8 +53,10 @@ function walkGraph(edges, id) {
 	const queue = [ id ];
 	while (queue.length) {
 		const nextId = queue.shift();
-		results.add(nextId);
-		queue.push(...(edges[nextId] || []));
+		if (!results.has(nextId)) {
+			results.add(nextId);
+			queue.push(...(edges[nextId] || []));
+		}
 	}
 	return results;
 }

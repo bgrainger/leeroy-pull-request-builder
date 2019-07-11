@@ -361,6 +361,32 @@ function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 	return subject;
 }
 
+// rate-limit our access to the GitHub API to prevent abuse triggers kicking in
+let lastGitHubApiAccess = 0;
+const gitHubApiAccessInterval = 50; // milliseconds
+
+function delayGitHubApiAccess() {
+	const now = Date.now();
+	const timeToWait = lastGitHubApiAccess + gitHubApiAccessInterval - now;
+	if (timeToWait <= 0) {
+		lastGitHubApiAccess = now;
+		return Promise.resolve();
+	} else {
+		return new Promise(resolve => setTimeout(() => checkGitHubLastAccess(resolve), timeToWait));
+	}
+}
+
+function checkGitHubLastAccess(resolve) {
+	const now = Date.now();
+	const timeToWait = lastGitHubApiAccess + gitHubApiAccessInterval - now;
+	if (timeToWait <= 0) {
+		lastGitHubApiAccess = now;
+		resolve();
+	} else {
+		setTimeout(() => checkGitHubLastAccess(resolve), timeToWait);
+	}
+}
+
 // update Leeroy configs every time Build/Configuration is pushed
 const pushedLeeroyConfigs = gitHubEvents.push
 	.filter(push => push.repository.full_name === 'Build/Configuration' && push.ref === 'refs/heads/master')
@@ -368,14 +394,14 @@ const pushedLeeroyConfigs = gitHubEvents.push
 	.flatMap(() => github.repos('Build', 'Configuration').contents.fetch())
 	.do(contents => log.debug(`Build/Configuration has ${contents.length} files.`))
 	.flatMap(contents => contents.filter(x => x.path.indexOf('.json') === x.path.length - 5))
-	.flatMap(file => github.repos('Build', 'Configuration').contents(file.path).read().then(contents => ({ path: file.path, contents })))
+	.flatMap(file => delayGitHubApiAccess().then(() => github.repos('Build', 'Configuration').contents(file.path).read()).then(contents => ({ path: file.path, contents })))
 	.map(x => { try { return { path: x.path, config: JSON.parse(x.contents) }; } catch(e) { return null; } })
 	.filter(x => x && !x.config.disabled && x.config.submodules && x.config.pullRequestBuildUrls && buildRepoUrl.test(x.config.repoUrl))
 	.map(x => mapLeeroyConfig(x.path.substr(0, x.path.length - 5), x.config));
 
 // get all existing open PRs when new repos are watched
 const existingPrs = state.watchedRepos
-	.flatMap(repo => github.repos(repo).pulls.fetch())
+	.flatMap(repo => delayGitHubApiAccess().then(() => github.repos(repo).pulls.fetch()))
 	.flatMap(pulls => pulls);
 // merge with new PRs that are opened while the server is running
 const newPrs = gitHubEvents.pull_request
@@ -392,7 +418,7 @@ allPrs
 const allPrBodies = allPrs.map(x => ({ id: getGitHubPullRequestId(x), body: x.body }));
 // get all comments added to existing PRs
 const existingIssueComments = existingPrs
-	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
+	.flatMap(x => delayGitHubApiAccess().then(() => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch()).then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
 // get all new comments that are added while the server is running
 const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));

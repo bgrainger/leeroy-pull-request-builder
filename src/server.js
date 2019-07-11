@@ -72,7 +72,7 @@ function getGitHubPullRequestId(ghpr) {
 	return mapGitHubPullRequest(ghpr).id;
 }
 
-const buildRepoUrl = /^git@git:([^/]+)\/(.+?)\.git$/;
+const buildRepoUrl = /^git@git(?:\.faithlife\.dev)?:([^/]+)\/(.+?)\.git$/;
 
 /**
  * Creates a buildConfig object from a Leeroy config JSON object (as documented
@@ -160,8 +160,8 @@ function createNewCommit(buildData) {
 
 	return Promise.all(buildData.pullRequests.map((pr, index) => {
 		// create a merge commit for each submodule that has a PR involved in this build
-		const oldSubmodule = `git@git:${pr.base.user}/${pr.base.repo}.git`;
-		const newSubmodule = `git@git:${pr.head.user}/${pr.head.repo}.git`;
+		const oldSubmodule = `git@git.faithlife.dev:${pr.base.user}/${pr.base.repo}.git`;
+		const newSubmodule = `git@git.faithlife.dev:${pr.head.user}/${pr.head.repo}.git`;
 		const treeItem = buildData.headTree.tree.filter(x => x.mode === '160000' && x.path === pr.base.repo)[0];
 		if (treeItem) {
 			const githubBase = github.repos(pr.base.user, pr.base.repo);
@@ -204,6 +204,7 @@ function createNewCommit(buildData) {
 		.then(submoduleTreeItems => {
 			for (const submoduleTreeItem of submoduleTreeItems.filter(x => x.oldSubmodule)) {
 				log.debug(`Changing submodule repo from ${submoduleTreeItem.oldSubmodule} to ${submoduleTreeItem.newSubmodule}`);
+				buildData.gitmodules = buildData.gitmodules.replace(submoduleTreeItem.oldSubmodule.replace('.faithlife.dev', ''), submoduleTreeItem.newSubmodule);
 				buildData.gitmodules = buildData.gitmodules.replace(submoduleTreeItem.oldSubmodule, submoduleTreeItem.newSubmodule);
 			}
 
@@ -397,7 +398,7 @@ const newIssueComments = gitHubEvents.issue_comment
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state
-const includePr1 = /\b(Includes?|Depends on|Requires?) https:\/\/git\/(.*?)\/(.*?)\/pull\/(\d+)/i;
+const includePr1 = /\b(Includes?|Depends on|Requires?) https:\/\/git(?:\.faithlife\.dev)?\/(.*?)\/(.*?)\/pull\/(\d+)/i;
 const includePr2 = /\b(Includes?|Depends on|Requires?) (\w+)\/(\w+)#(\d+)\b/i;
 allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 	.map(x => ({ id: x.id, match: includePr1.exec(x.body) || includePr2.exec(x.body) }))

@@ -16,6 +16,7 @@ const version = require('../package.json').version;
 rx.config.longStackSupport = true;
 
 let github;
+let jenkinsCredentials;
 
 /**
  * An Observable sequence of GitHub event payloads (see https://developer.github.com/v3/activity/events/types/)
@@ -259,38 +260,14 @@ function startBuilds(buildData) {
 	activeBuilds.set(buildData.newCommit.sha, buildData);
 	buildData.jobCount = buildData.config.jobs.length;
 	return Promise.all(buildData.config.jobs.map(job => {
-		// Jenkins now requires a CSRF "crumb" to be sent in the HTTP headers; there is a separate API that issues them
-		let getCrumb = Promise.resolve(null);
-		if (job.url.match(/jenkins/)) {
-			// TODO: decide if it's worth caching these for some time instead of requesting them for every single build
-			var getCrumbUrl = url.resolve(job.url, '/crumbIssuer/api/json');
-			log.info(`Getting crumb from ${getCrumbUrl}`);
-			getCrumb = superagent.get(getCrumbUrl).then(x => {
-				if (x && x.body && x.body.crumb) {
-					log.debug(`Got crumb: ${x.body.crumb}`);
-					return [ x.body.crumbRequestField, x.body.crumb ];
-				} else {
-					log.warn(`Unexpected crumb response: ${JSON.stringify(x)}`);
-					return null;
-				}
-			}, err => {
-				log.warn(`Getting crumb failed: ${err}`);
-				return null;
-			});
-		}
-
-		return getCrumb.then(crumb => {
-			log.info(`Starting a build at ${job.url}`);
-			var request = superagent
-				.post(job.url)
-				.query({ sha1: buildData.newCommit.sha });
-			if (crumb) {
-				request = request.set(crumb[0], crumb[1]);
-			}
-			return request.then(null, err => {
-				log.warn(`Build didn't start: ${err}`);
-				buildData.jobCount--;
-			});
+		log.info(`Starting a build at ${job.url}`);
+		var request = superagent
+			.post(job.url)
+			.auth(jenkinsCredentials.user, jenkinsCredentials.password)
+			.query({ sha1: buildData.newCommit.sha });
+		return request.then(null, err => {
+			log.warn(`Build didn't start: ${err}`);
+			buildData.jobCount--;
 		});
 	}));
 }
@@ -488,13 +465,17 @@ jenkinsNotifications
 	}, e => log.error(e));
 
 let started = false;
-export function start(port, gitHubUrl, gitHubToken) {
+export function start(port, gitHubUrl, gitHubToken, jenkinsUser, jenkinsToken) {
 	if (!port)
 		throw new Error('port must be specified');
 	if (!gitHubUrl)
 		throw new Error('gitHubUrl must be specified');
 	if (!gitHubToken)
 		throw new Error('gitHubToken must be specified');
+	if (!jenkinsUser)
+		throw new Error('jenkinsUser must be specified');
+	if (!jenkinsToken)
+		throw new Error('jenkinsToken must be specified');
 	if (started)
 		throw new Error('Server is already started');
 	started = true;
@@ -504,6 +485,7 @@ export function start(port, gitHubUrl, gitHubToken) {
 		token: gitHubToken,
 		rootURL: gitHubUrl
 	});
+	jenkinsCredentials = { user: jenkinsUser, password: jenkinsToken };
 
 	pushedLeeroyConfigs.subscribe(state.addBuildConfig, e => log.error(e));
 

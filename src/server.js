@@ -10,7 +10,6 @@ import * as state from './state';
 import superagent_base from 'superagent';
 import superagent_promise from 'superagent-promise';
 const superagent = superagent_promise(superagent_base, Promise);
-const url = require('url');
 const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;

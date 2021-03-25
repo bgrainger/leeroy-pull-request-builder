@@ -394,6 +394,7 @@ const existingIssueComments = existingPrs
 	.flatMap(x => github.repos(x.base.repo.owner.login, x.base.repo.name).issues(x.number).comments.fetch().then(y => ({ id: getGitHubPullRequestId(x), body: y.body })));
 // get all new comments that are added while the server is running
 const newIssueComments = gitHubEvents.issue_comment
+	.filter(ic => ic.action === 'created' || ic.action === 'edited')
 	.map(ic => ({ id: `${ic.repository.full_name}/${ic.issue.number}`, body: ic.comment.body }));
 
 // look for "Includes ..." in all PR comments & update state

@@ -1,6 +1,7 @@
 import bodyParser from 'body-parser';
 import * as buildConfig from './build-config.js';
 import express from 'express';
+import flatMap from 'array.prototype.flatmap';
 import log from './logger';
 import octokat from 'octokat';
 import * as pullRequest from './pull-request';
@@ -10,6 +11,7 @@ import * as state from './state';
 import superagent_base from 'superagent';
 import superagent_promise from 'superagent-promise';
 const superagent = superagent_promise(superagent_base, Promise);
+const url = require('url');
 const version = require('../package.json').version;
 
 rx.config.longStackSupport = true;
@@ -250,6 +252,91 @@ function moveBranch(repo, branch, sha) {
 			() => repo.git.refs.create({ sha, ref: `refs/${refName}` }));
 }
 
+/**
+ * Cancels current and/or pending builds for all a job associated with a given PR.
+ * Note: The job must define a prId string parameter to support cancellation.
+ */
+function cancelAssociatedCurrentAndPendingBuildsIfNeeded(job, primaryPrId) {
+	const cancelPendingBuilds = superagent
+		.get(url.resolve(job.url, '/queue/api/json'))
+		.then(allQueuedBuildsResponse => {
+			if (allQueuedBuildsResponse && allQueuedBuildsResponse.body && allQueuedBuildsResponse.body.items) {
+				const items = allQueuedBuildsResponse.body.items.filter(x => x && x.task && x.task.name === job.name);
+				return Promise.all(items
+					.map(item => superagent
+						.get(url.resolve(job.url, `/queue/item/${item.id}/api/json`))
+						.then(itemDetailsResponse => {
+							const actions = itemDetailsResponse && itemDetailsResponse.body && itemDetailsResponse.body.actions || [];
+							const matchingBuild = flatMap(actions, x => (x.parameters || [])).some(y => y.name === "prId" && y.value === primaryPrId);
+
+							if (matchingBuild) {
+								const cancelRequest = superagent
+									.post(url.resolve(job.url, `/queue/cancelItem?id=${item.id}`))
+									.auth(jenkinsCredentials.user, jenkinsCredentials.password);
+								return cancelRequest.then(() => {
+									log.info(`Canceled pending build for PR: ${primaryPrId} and Job: ${job.name}`);
+									return null;
+								}, err => {
+									log.warn(`Canceling build failed: ${err}`);
+									return null;
+								});
+							} else {
+								return null;
+							}
+						}, err => {
+							log.warn(`Getting item details failed: ${err}`);
+							return null;
+						})));
+			} else {
+				log.warn(`Unexpected queue response: ${JSON.stringify(allQueuedBuildsResponse)}`);
+				return null;
+			}
+		}, err => {
+			log.warn(`Getting queued builds failed: ${err}`);
+			return null;
+		});
+	
+	const cancelCurrentBuild = cancelPendingBuilds.then(() => superagent
+		.get(url.resolve(job.url, `/job/${job.name}/api/json`))
+		.then(jobResponse => {
+			if (jobResponse && jobResponse.body && jobResponse.body.color && jobResponse.body.color.endsWith('_anime')) {
+				const currentBuildNumber = jobResponse.body.lastBuild && jobResponse.body.lastBuild.number;
+				if (currentBuildNumber) {
+					return superagent
+						.get(url.resolve(job.url, `/job/${job.name}/${currentBuildNumber}/api/json`))
+						.then(currentBuildResponse => {
+							const actions = currentBuildResponse && currentBuildResponse.body && currentBuildResponse.body.actions || [];
+							const matchingBuild = flatMap(actions, x => (x.parameters || [])).some(y => y.name === "prId" && y.value === primaryPrId);
+
+							if (matchingBuild) {
+								const cancelRequest = superagent
+									.post(url.resolve(job.url, `/job/${job.name}/${currentBuildNumber}/stop`))
+									.auth(jenkinsCredentials.user, jenkinsCredentials.password);
+								return cancelRequest.then(() => {
+									log.info(`Canceled build for PR: ${primaryPrId} and Job: ${job.name}`);
+									return null;
+								}, err => {
+									log.warn(`Canceling build failed: ${err}`);
+									return null;
+								});
+							} else {
+								return null;
+							}
+						}, err => {
+							log.warn(`Getting current build data failed: ${err}`);
+							return null;
+						});
+				}
+			}
+			return null;
+		}, err => {
+			log.warn(`Getting job data failed: ${err}`);
+			return null;
+		}));
+
+	return cancelCurrentBuild;
+}
+
 const activeBuilds = new Map();
 
 /**
@@ -259,15 +346,22 @@ function startBuilds(buildData) {
 	activeBuilds.set(buildData.newCommit.sha, buildData);
 	buildData.jobCount = buildData.config.jobs.length;
 	return Promise.all(buildData.config.jobs.map(job => {
+		const cancelJobs = job.url.match(/jenkins/) && job.name
+			? cancelAssociatedCurrentAndPendingBuildsIfNeeded(job, buildData.primaryPrId)
+			: Promise.resolve(null);
+
 		log.info(`Starting a build at ${job.url}`);
-		var request = superagent
+		const request = superagent
 			.post(job.url)
 			.auth(jenkinsCredentials.user, jenkinsCredentials.password)
-			.query({ sha1: buildData.newCommit.sha });
-		return request.then(null, err => {
+			.query({
+				sha1: buildData.newCommit.sha,
+				prId: buildData.primaryPrId
+			});
+		return cancelJobs.then(() => request.then(null, err => {
 			log.warn(`Build didn't start: ${err}`);
 			buildData.jobCount--;
-		});
+		}));
 	}));
 }
 
@@ -305,6 +399,7 @@ function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 	 * 	newCommit : a GitHub Git Commit object for the new commit in the Build repo
 	 * 	buildBranchName : the new branch name created in the Build repo for newCommit
 	 * 	submoduleBranches : an array of repoBranch objects for each submodule updated by the build
+	 * 	primaryPrId : the unique id of the PR that triggered the builds
 	 */
 	// set the config, github and pullRequests properties
 	let buildDatas = configsToBuild
@@ -312,7 +407,8 @@ function buildPullRequest(prId, prsBeingBuilt = new Set()) {
 		.map(config => ({
 			config,
 			github: github.repos(config.repo.user, config.repo.repo),
-			pullRequests: Array.from(state.getIncludedPrs(prId)).map(state.getPr)
+			pullRequests: Array.from(state.getIncludedPrs(prId)).map(state.getPr),
+			primaryPrId: prId
 		}));
 
 	// add the headCommit, headTree, and gitmodules properties
@@ -438,6 +534,7 @@ jenkinsNotifications
 	.subscribe(x => {
 		setStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
 		superagent.post(`${x.job.build.full_url}/submitDescription`)
+			.auth(jenkinsCredentials.user, jenkinsCredentials.password)
 			.type('form')
 			.send({ description: x.buildData.pullRequests[0].title, Submit: 'Submit' })
 			.end();

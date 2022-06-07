@@ -534,6 +534,7 @@ jenkinsNotifications
 	.subscribe(x => {
 		setStatus(x.buildData, `Jenkins: ${x.job.name}`, 'pending', 'Building with Jenkins', x.job.build.full_url);
 		superagent.post(`${x.job.build.full_url}/submitDescription`)
+			.auth(jenkinsCredentials.user, jenkinsCredentials.password)
 			.type('form')
 			.send({ description: x.buildData.pullRequests[0].title, Submit: 'Submit' })
 			.end();

@@ -366,6 +366,22 @@ function startBuilds(buildData) {
 }
 
 /**
+ * Checks skip triggers and starts all builds needed for `prId` (which should be in the form 'User/Repo/123') as needed.
+ */
+function buildPullRequestIfNeeded(prId) {
+	const [owner, repo, prNumber] = prId.split('/');
+	return github.repos(owner, repo).pulls(prNumber).fetch()
+		.then(pr => {
+			const shouldSkipBuild = pr && pr.labels.some((x) => x.name === "skip-build");
+			if (shouldSkipBuild) {
+				log.info(`Skipping build for ${prId} - Reason: PR includes the skip-build label.`);
+			} else {
+				buildPullRequest(prId);
+			}
+		});
+}
+
+/**
  * Starts all builds needed for `prId` (which should be in the form 'User/Repo/123').
  */
 function buildPullRequest(prId, prsBeingBuilt = new Set()) {
@@ -508,7 +524,7 @@ allPrBodies.merge(existingIssueComments).merge(newIssueComments)
 // look for "Rebuild this" in new comments only
 newIssueComments.subscribe(comment => {
 	if (/rebuild this/i.test(comment.body))
-		buildPullRequest(comment.id);
+		buildPullRequestIfNeeded(comment.id);
 }, e => log.error(e));
 
 // build all new or updated PRs
@@ -518,7 +534,7 @@ gitHubEvents.pull_request
 	.map(mapGitHubPullRequest)
 	.delaySubscription(1000) // feels hacky but we need state to have been updated
 	.subscribe(pr => {
-		buildPullRequest(pr.id);
+		buildPullRequestIfNeeded(pr.id);
 	}, e => log.error(e));
 
 var jenkinsNotifications = jenkinsEvents
